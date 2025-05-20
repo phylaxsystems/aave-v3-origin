@@ -3,7 +3,7 @@ pragma solidity ^0.8.13;
 
 import {Assertion} from "credible-std/Assertion.sol";
 import {PhEvm} from "credible-std/PhEvm.sol";
-import {IPool} from "../../src/contracts/interfaces/IPool.sol";
+import {IMockPool} from "./IMockPool.sol";
 import {DataTypes} from "../../src/contracts/protocol/libraries/types/DataTypes.sol";
 import {IAToken} from "../../src/contracts/interfaces/IAToken.sol";
 import {IERC20} from "../../src/contracts/dependencies/openzeppelin/contracts/IERC20.sol";
@@ -11,9 +11,9 @@ import {ReserveConfiguration} from "../../src/contracts/protocol/libraries/confi
 import {UserConfiguration} from "../../src/contracts/protocol/libraries/configuration/UserConfiguration.sol";
 
 contract LendingPostConditionAssertions is Assertion {
-    IPool public immutable pool;
+    IMockPool public immutable pool;
 
-    constructor(IPool _pool) {
+    constructor(IMockPool _pool) {
         pool = _pool;
     }
 

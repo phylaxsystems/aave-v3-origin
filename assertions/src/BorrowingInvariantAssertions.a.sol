@@ -3,17 +3,17 @@ pragma solidity ^0.8.13;
 
 import {Assertion} from "credible-std/Assertion.sol";
 import {PhEvm} from "credible-std/PhEvm.sol";
-import {IPool} from "../../src/contracts/interfaces/IPool.sol";
 import {DataTypes} from "../../src/contracts/protocol/libraries/types/DataTypes.sol";
 import {IERC20} from "../../src/contracts/dependencies/openzeppelin/contracts/IERC20.sol";
 import {ReserveConfiguration} from "../../src/contracts/protocol/libraries/configuration/ReserveConfiguration.sol";
 import {UserConfiguration} from "../../src/contracts/protocol/libraries/configuration/UserConfiguration.sol";
 import {IVariableDebtToken} from "../../src/contracts/interfaces/IVariableDebtToken.sol";
+import {IMockPool} from "./IMockPool.sol";
 
 contract BorrowingPostConditionAssertions is Assertion {
-    IPool public immutable pool;
+    IMockPool public immutable pool;
 
-    constructor(IPool _pool) {
+    constructor(IMockPool _pool) {
         pool = _pool;
     }
 
@@ -36,18 +36,21 @@ contract BorrowingPostConditionAssertions is Assertion {
     function assertLiabilityDecrease() external {
         PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.repay.selector);
         for (uint256 i = 0; i < callInputs.length; i++) {
-            (,,, address onBehalfOf) = abi.decode(callInputs[i].input, (address, uint256, uint256, address));
+            (, uint256 amount,, address onBehalfOf) =
+                abi.decode(callInputs[i].input, (address, uint256, uint256, address));
 
             // Get total debt before
             ph.forkPreState();
-            (,,, uint256 totalDebtBase,,) = pool.getUserAccountData(onBehalfOf);
+            (, uint256 totalDebtBase,,,,) = pool.getUserAccountData(onBehalfOf);
 
             // Get total debt after
             ph.forkPostState();
-            (,,, uint256 postTotalDebtBase,,) = pool.getUserAccountData(onBehalfOf);
+            (, uint256 postTotalDebtBase,,,,) = pool.getUserAccountData(onBehalfOf);
 
             // Check debt decreased
             require(postTotalDebtBase < totalDebtBase, "User liability did not decrease after repayment");
+            // Check debt decreased by at least the repay amount (could be more due to interest)
+            require(totalDebtBase - postTotalDebtBase >= amount, "Debt decrease should be at least the repay amount");
         }
     }
 
@@ -75,11 +78,11 @@ contract BorrowingPostConditionAssertions is Assertion {
 
             // Get total debt before
             ph.forkPreState();
-            (,,, uint256 totalDebtBase,,) = pool.getUserAccountData(onBehalfOf);
+            (, uint256 totalDebtBase,,,,) = pool.getUserAccountData(onBehalfOf);
 
             // Get total debt after
             ph.forkPostState();
-            (,,, uint256 postTotalDebtBase,,) = pool.getUserAccountData(onBehalfOf);
+            (, uint256 postTotalDebtBase,,,,) = pool.getUserAccountData(onBehalfOf);
 
             // If amount equals total debt, debt should be 0 after
             if (amount == totalDebtBase) {
@@ -128,7 +131,7 @@ contract BorrowingPostConditionAssertions is Assertion {
             (address asset, uint256 amount,) = abi.decode(callInputs[i].input, (address, uint256, address));
 
             // Get total debt
-            (,,, uint256 totalDebtBase,,) = pool.getUserAccountData(callInputs[i].caller);
+            (, uint256 totalDebtBase,,,,) = pool.getUserAccountData(callInputs[i].caller);
 
             // If no debt, should be able to withdraw all
             if (totalDebtBase == 0) {
@@ -161,8 +164,8 @@ contract BorrowingPostConditionAssertions is Assertion {
             ph.forkPostState();
             uint256 postTotalBorrow = variableDebtToken.scaledTotalSupply();
 
-            // If borrow increased, check against cap
-            require(postTotalBorrow <= preTotalBorrow, "Total borrow did not decrease");
+            // Check borrow increased (since this is a borrow operation)
+            require(postTotalBorrow > preTotalBorrow, "Total borrow did not increase");
             uint256 borrowCap = ReserveConfiguration.getBorrowCap(reserveData.configuration);
             if (borrowCap != 0) {
                 // 0 means no cap
@@ -203,14 +206,15 @@ contract BorrowingPostConditionAssertions is Assertion {
 
             // Get debt before
             ph.forkPreState();
-            (,,, uint256 totalDebtBase,,) = pool.getUserAccountData(onBehalfOf);
+            (, uint256 totalDebtBase,,,,) = pool.getUserAccountData(onBehalfOf);
 
             // Get debt after
             ph.forkPostState();
-            (,,, uint256 postTotalDebtBase,,) = pool.getUserAccountData(onBehalfOf);
+            (, uint256 postTotalDebtBase,,,,) = pool.getUserAccountData(onBehalfOf);
 
-            // Check debt increased by amount
-            require(postTotalDebtBase - totalDebtBase == amount, "Debt did not increase by borrow amount");
+            // Check debt increased by at least the borrow amount (could be more due to interest)
+            require(postTotalDebtBase > totalDebtBase, "Debt did not increase");
+            require(postTotalDebtBase - totalDebtBase >= amount, "Debt increase should be at least the borrow amount");
         }
     }
 
@@ -236,7 +240,7 @@ contract BorrowingPostConditionAssertions is Assertion {
         }
     }
 
-    // BORROWING_HSPOST_L: After a successful repay the onBehalf debt balance should decrease by the amount repaid
+    // BORROWING_HSPOST_L: After a successful repay the onBehalf debt balance should decrease by at least the amount repaid
     function assertRepayDebtChanges() external {
         PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.repay.selector);
         for (uint256 i = 0; i < callInputs.length; i++) {
@@ -245,14 +249,15 @@ contract BorrowingPostConditionAssertions is Assertion {
 
             // Get debt before
             ph.forkPreState();
-            (,,, uint256 totalDebtBase,,) = pool.getUserAccountData(onBehalfOf);
+            (, uint256 totalDebtBase,,,,) = pool.getUserAccountData(onBehalfOf);
 
             // Get debt after
             ph.forkPostState();
-            (,,, uint256 postTotalDebtBase,,) = pool.getUserAccountData(onBehalfOf);
+            (, uint256 postTotalDebtBase,,,,) = pool.getUserAccountData(onBehalfOf);
 
-            // Check debt decreased by amount
-            require(totalDebtBase - postTotalDebtBase == amount, "Debt did not decrease by repay amount");
+            // Check debt decreased by at least the repay amount (could be more due to interest)
+            require(totalDebtBase > postTotalDebtBase, "Debt did not decrease");
+            require(totalDebtBase - postTotalDebtBase >= amount, "Debt decrease should be at least the repay amount");
         }
     }
 }
