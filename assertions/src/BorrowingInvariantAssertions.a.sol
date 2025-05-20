@@ -176,6 +176,9 @@ contract BorrowingPostConditionAssertions is Assertion {
     }
 
     // BORROWING_HSPOST_I: After a successful borrow the actor asset balance should increase by the amount borrowed
+    // This version uses getCallInputs to directly access the function parameters from the call data
+    // It's simpler but requires the function to be called directly (not through a proxy or delegatecall)
+    // Gas cost of this assertion for a single borrow transaction: 40263
     function assertBorrowBalanceChanges() external {
         PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.borrow.selector);
         for (uint256 i = 0; i < callInputs.length; i++) {
@@ -199,7 +202,10 @@ contract BorrowingPostConditionAssertions is Assertion {
     }
 
     // BORROWING_HSPOST_I: After a successful borrow the actor asset balance should increase by the amount borrowed
-    // This version uses event logs instead of direct state changes
+    // This version uses getLogs to access the Borrow event data instead of call inputs
+    // It's more complex but works even if the function is called through a proxy or delegatecall
+    // since it relies on the event being emitted rather than the direct function call
+    // Gas cost of this assertion for a single borrow transaction: 42739
     function assertBorrowBalanceChangesFromLogs() external {
         PhEvm.Log[] memory logs = ph.getLogs();
         for (uint256 i = 0; i < logs.length; i++) {
