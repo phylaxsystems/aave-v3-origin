@@ -27,6 +27,7 @@ contract BorrowingPostConditionAssertions is Assertion {
         registerCallTrigger(this.assertWithdrawNoDebt.selector, pool.withdraw.selector);
         registerCallTrigger(this.assertBorrowCap.selector, pool.borrow.selector);
         registerCallTrigger(this.assertBorrowBalanceChanges.selector, pool.borrow.selector);
+        registerCallTrigger(this.assertBorrowBalanceChangesFromLogs.selector, pool.borrow.selector);
         registerCallTrigger(this.assertBorrowDebtChanges.selector, pool.borrow.selector);
         registerCallTrigger(this.assertRepayBalanceChanges.selector, pool.repay.selector);
         registerCallTrigger(this.assertRepayDebtChanges.selector, pool.repay.selector);
@@ -113,7 +114,7 @@ contract BorrowingPostConditionAssertions is Assertion {
     function assertRepayReserveState() external {
         PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.repay.selector);
         for (uint256 i = 0; i < callInputs.length; i++) {
-            (address asset,,,,) = abi.decode(callInputs[i].input, (address, uint256, uint256, uint16, address));
+            (address asset,,,) = abi.decode(callInputs[i].input, (address, uint256, uint256, address));
 
             // Get reserve data
             DataTypes.ReserveDataLegacy memory reserveData = pool.getReserveData(asset);
@@ -194,6 +195,38 @@ contract BorrowingPostConditionAssertions is Assertion {
 
             // Check balance increased by amount
             require(postBalance - preBalance == amount, "Balance did not increase by borrow amount");
+        }
+    }
+
+    // BORROWING_HSPOST_I: After a successful borrow the actor asset balance should increase by the amount borrowed
+    // This version uses event logs instead of direct state changes
+    function assertBorrowBalanceChangesFromLogs() external {
+        PhEvm.Log[] memory logs = ph.getLogs();
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].topics[0] == keccak256("Borrow(address,address,address,uint256,uint8,uint256,uint16)")) {
+                // Get indexed fields from topics
+                address reserve = address(uint160(uint256(logs[i].topics[1])));
+                address onBehalfOf = address(uint160(uint256(logs[i].topics[2])));
+                uint16 referralCode = uint16(uint256(logs[i].topics[3]));
+
+                // Get non-indexed fields from data
+                (address user, uint256 amount, DataTypes.InterestRateMode interestRateMode, uint256 borrowRate) =
+                    abi.decode(logs[i].data, (address, uint256, DataTypes.InterestRateMode, uint256));
+
+                // Get underlying token
+                IERC20 underlying = IERC20(reserve);
+
+                // Get balances before
+                ph.forkPreState();
+                uint256 preBalance = underlying.balanceOf(user);
+
+                // Get balances after
+                ph.forkPostState();
+                uint256 postBalance = underlying.balanceOf(user);
+
+                // Check balance increased by amount
+                require(postBalance - preBalance == amount, "Balance did not increase by borrow amount");
+            }
         }
     }
 
