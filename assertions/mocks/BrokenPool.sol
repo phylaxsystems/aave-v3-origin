@@ -22,6 +22,7 @@ contract BrokenPool is IMockPool {
     bool public breakDepositBalance;
     bool public breakRepayDebt;
     bool public breakWithdrawBalance;
+    bool public breakFlashloanRepayment;
 
     // Simple state tracking
     mapping(address => bool) public isActive;
@@ -50,6 +51,10 @@ contract BrokenPool is IMockPool {
 
     function setBreakWithdrawBalance(bool value) external {
         breakWithdrawBalance = value;
+    }
+
+    function setBreakFlashloanRepayment(bool value) external {
+        breakFlashloanRepayment = value;
     }
 
     function setUserHealthFactor(address user, uint256 healthFactor) external {
@@ -242,5 +247,39 @@ contract BrokenPool is IMockPool {
 
     function setReserveDeficit(address asset, uint256 deficit) external {
         reserveDeficits[asset] = deficit;
+    }
+
+    // Flashloan implementation that can be broken
+    function flashLoan(
+        address receiverAddress,
+        address[] calldata assets,
+        uint256[] calldata amounts,
+        uint256[] calldata modes,
+        address onBehalfOf,
+        bytes calldata params,
+        uint16 referralCode
+    ) external override {
+        if (breakFlashloanRepayment) {
+            // Broken behavior: Transfer tokens but don't require repayment
+            for (uint256 i = 0; i < assets.length; i++) {
+                IERC20(assets[i]).transfer(receiverAddress, amounts[i]);
+            }
+        }
+        // Not broken behavior: Do nothing, pretending no state has changed
+    }
+
+    // Simple flashloan implementation that can be broken
+    function flashLoanSimple(
+        address receiverAddress,
+        address asset,
+        uint256 amount,
+        bytes calldata params,
+        uint16 referralCode
+    ) external override {
+        if (breakFlashloanRepayment) {
+            // Broken behavior: Transfer tokens but don't require repayment
+            IERC20(asset).transfer(receiverAddress, amount);
+        }
+        // Not broken behavior: Do nothing, pretending no state has changed
     }
 }

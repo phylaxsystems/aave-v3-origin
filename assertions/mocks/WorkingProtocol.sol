@@ -192,4 +192,24 @@ contract WorkingProtocol is IMockPool {
         // Mock health factor update
         healthFactors[user] = 1.5e18; // Default to healthy
     }
+
+    // Flashloan implementation
+    function flashLoan(
+        address receiverAddress,
+        address[] calldata assets,
+        uint256[] calldata amounts,
+        uint256[] calldata modes,
+        address onBehalfOf,
+        bytes calldata params,
+        uint16 referralCode
+    ) external override {}
+
+    // Simple flashloan implementation
+    function flashLoanSimple(
+        address receiverAddress,
+        address asset,
+        uint256 amount,
+        bytes calldata params,
+        uint16 referralCode
+    ) external override {}
 }

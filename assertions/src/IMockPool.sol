@@ -45,4 +45,24 @@ interface IMockPool {
     function getUserDebtBalance(address user, address asset) external view returns (uint256);
     function getReserveDeficit(address asset) external view returns (uint256);
     function getLiquidationGracePeriod(address asset) external view returns (uint40);
+
+    // Flashloan function
+    function flashLoan(
+        address receiverAddress,
+        address[] calldata assets,
+        uint256[] calldata amounts,
+        uint256[] calldata modes,
+        address onBehalfOf,
+        bytes calldata params,
+        uint16 referralCode
+    ) external;
+
+    // Simple flashloan function
+    function flashLoanSimple(
+        address receiverAddress,
+        address asset,
+        uint256 amount,
+        bytes calldata params,
+        uint16 referralCode
+    ) external;
 }
