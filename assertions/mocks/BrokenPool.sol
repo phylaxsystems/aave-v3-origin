@@ -12,6 +12,9 @@ contract BrokenPool is IMockPool {
     // Store user balances
     mapping(address => mapping(address => uint256)) public userBalances;
 
+    // Store health factors
+    mapping(address => uint256) public userHealthFactors;
+
     // Store aToken addresses
     mapping(address => address) public aTokenAddresses;
 
@@ -24,6 +27,10 @@ contract BrokenPool is IMockPool {
     mapping(address => bool) public isActive;
     mapping(address => bool) public isFrozen;
     mapping(address => bool) public isPaused;
+
+    // Liquidation state
+    mapping(address => uint40) public liquidationGracePeriods;
+    mapping(address => uint256) public reserveDeficits;
 
     function setATokenAddress(address asset, address aToken) external {
         aTokenAddresses[asset] = aToken;
@@ -43,6 +50,10 @@ contract BrokenPool is IMockPool {
 
     function setBreakWithdrawBalance(bool value) external {
         breakWithdrawBalance = value;
+    }
+
+    function setUserHealthFactor(address user, uint256 healthFactor) external {
+        userHealthFactors[user] = healthFactor;
     }
 
     // Simple state control functions
@@ -92,7 +103,7 @@ contract BrokenPool is IMockPool {
             uint256 healthFactor
         )
     {
-        return (0, userDebt[user], 0, 0, 0, 0);
+        return (0, userDebt[user], 0, 0, 0, userHealthFactors[user]);
     }
 
     function getReserveData(address asset) external view override returns (DataTypes.ReserveDataLegacy memory) {
@@ -183,5 +194,53 @@ contract BrokenPool is IMockPool {
 
     function paused() external pure returns (bool) {
         return false;
+    }
+
+    // New functions for liquidation assertions
+    function liquidationCall(
+        address collateralAsset,
+        address debtAsset,
+        address user,
+        uint256 debtToCover,
+        bool receiveAToken
+    ) external override {
+        // No-op for testing
+    }
+
+    function getCloseFactor() external pure override returns (uint256) {
+        return 5000; // 50%
+    }
+
+    function MIN_BASE_MAX_CLOSE_FACTOR_THRESHOLD() external pure override returns (uint256) {
+        return 1000e18;
+    }
+
+    function MIN_LEFTOVER_BASE() external pure override returns (uint256) {
+        return 100e18;
+    }
+
+    function getUserCollateralBalance(address user, address asset) external view override returns (uint256) {
+        return userBalances[user][asset];
+    }
+
+    function getUserDebtBalance(address user, address asset) external view override returns (uint256) {
+        return userDebt[user];
+    }
+
+    function getReserveDeficit(address asset) external view override returns (uint256) {
+        return reserveDeficits[asset];
+    }
+
+    function getLiquidationGracePeriod(address asset) external view override returns (uint40) {
+        return liquidationGracePeriods[asset];
+    }
+
+    // Helper functions for testing
+    function setLiquidationGracePeriod(address asset, uint40 until) external {
+        liquidationGracePeriods[asset] = until;
+    }
+
+    function setReserveDeficit(address asset, uint256 deficit) external {
+        reserveDeficits[asset] = deficit;
     }
 }

@@ -29,4 +29,20 @@ interface IMockPool {
     function setReserveActive(address asset, bool active) external;
     function setReserveFrozen(address asset, bool frozen) external;
     function setReservePaused(address asset, bool isPaused) external;
+
+    // New functions for liquidation assertions
+    function liquidationCall(
+        address collateralAsset,
+        address debtAsset,
+        address user,
+        uint256 debtToCover,
+        bool receiveAToken
+    ) external;
+    function getCloseFactor() external view returns (uint256);
+    function MIN_BASE_MAX_CLOSE_FACTOR_THRESHOLD() external view returns (uint256);
+    function MIN_LEFTOVER_BASE() external view returns (uint256);
+    function getUserCollateralBalance(address user, address asset) external view returns (uint256);
+    function getUserDebtBalance(address user, address asset) external view returns (uint256);
+    function getReserveDeficit(address asset) external view returns (uint256);
+    function getLiquidationGracePeriod(address asset) external view returns (uint40);
 }
