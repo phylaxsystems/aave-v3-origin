@@ -2,6 +2,7 @@
 pragma solidity ^0.8.13;
 
 import {DataTypes} from "../../src/contracts/protocol/libraries/types/DataTypes.sol";
+import {IPriceOracleGetter} from "../../src/contracts/interfaces/IPriceOracleGetter.sol";
 
 interface IMockPool {
     function repay(address asset, uint256 amount, uint256 interestRateMode, address onBehalfOf)
