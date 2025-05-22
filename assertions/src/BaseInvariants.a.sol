@@ -13,11 +13,11 @@ import {DataTypes} from "../../src/contracts/protocol/libraries/types/DataTypes.
  */
 contract BaseInvariants is Assertion {
     IPool public immutable pool;
-    address public immutable asset;
+    IERC20 public immutable asset;
 
     constructor(address poolAddress, address assetAddress) {
         pool = IPool(poolAddress);
-        (,, address debtToken) = pool.getReserveData(asset);
+        asset = IERC20(assetAddress);
     }
 
     function triggers() public view override {
