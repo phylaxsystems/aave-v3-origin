@@ -103,6 +103,7 @@ contract OracleAssertions is Assertion {
     /*/////////////////////////////////////////////////////////////////////////////////////////////
         ORACLE_INVARIANT_B: The price feed should never return different prices 
         when called multiple times in a single tx
+        See tests/invariants/specs/InvariantsSpec.t.sol
     /////////////////////////////////////////////////////////////////////////////////////////////*/
 
     /**
