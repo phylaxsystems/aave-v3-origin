@@ -57,7 +57,7 @@ contract BaseInvariants is Assertion {
         borrowCalls[i].input,
         (address, uint256, uint256, uint16, address)
       );
-      if (borrowAsset == asset) {
+      if (borrowAsset == address(asset)) {
         balanceChange += int256(amount);
       }
     }
@@ -68,7 +68,7 @@ contract BaseInvariants is Assertion {
         repayCalls[i].input,
         (address, uint256, uint256, address)
       );
-      if (repayAsset == asset) {
+      if (repayAsset == address(asset)) {
         balanceChange -= int256(amount);
       }
     }
@@ -77,7 +77,7 @@ contract BaseInvariants is Assertion {
     for (uint256 i = 0; i < liquidationCalls.length; i++) {
       (address collateralAsset, address debtAsset, address user, uint256 debtToCover, ) = abi
         .decode(liquidationCalls[i].input, (address, address, address, uint256, bool));
-      if (debtAsset == asset) {
+      if (debtAsset == address(asset)) {
         balanceChange -= int256(debtToCover);
       }
     }
@@ -92,15 +92,15 @@ contract BaseInvariants is Assertion {
    */
   function _verifyDebtTokenSupplyChange(int256 expectedChange) internal {
     // Get debt token address
-    (, , address debtToken) = pool.getReserveData(asset);
+    DataTypes.ReserveDataLegacy memory reserveData = pool.getReserveData(address(asset));
 
     // Get pre-state total supply
     ph.forkPreState();
-    uint256 preSupply = IERC20(debtToken).totalSupply();
+    uint256 preSupply = IERC20(reserveData.variableDebtTokenAddress).totalSupply();
 
     // Get post-state total supply
     ph.forkPostState();
-    uint256 postSupply = IERC20(debtToken).totalSupply();
+    uint256 postSupply = IERC20(reserveData.variableDebtTokenAddress).totalSupply();
 
     // Calculate actual change
     int256 actualChange = int256(postSupply) - int256(preSupply);

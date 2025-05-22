@@ -14,7 +14,6 @@ pragma solidity ^0.8.13;
  */
 import {Test} from 'forge-std/Test.sol';
 import {CredibleTest} from 'credible-std/CredibleTest.sol';
-import {console} from 'forge-std/console.sol';
 import {FlashloanPostConditionAssertions} from '../src/FlashloanInvariantAssertions.a.sol';
 import {IMockPool} from '../src/IMockPool.sol';
 import {DataTypes} from '../../src/contracts/protocol/libraries/types/DataTypes.sol';
@@ -132,8 +131,6 @@ contract TestFlashloanInvariantAssertions is CredibleTest, Test, TestnetProcedur
     // Get initial balances
     uint256 preATokenBalance = usdx.balanceOf(aTokenAddress);
     uint256 preReceiverBalance = usdx.balanceOf(address(mockFlashSimpleReceiver));
-    console.log('Pre-aToken balance:', preATokenBalance);
-    console.log('Pre-receiver balance:', preReceiverBalance);
 
     // Execute flashloan
     vm.prank(alice);
@@ -148,14 +145,6 @@ contract TestFlashloanInvariantAssertions is CredibleTest, Test, TestnetProcedur
     // Get final balances
     uint256 postATokenBalance = usdx.balanceOf(aTokenAddress);
     uint256 postReceiverBalance = usdx.balanceOf(address(mockFlashSimpleReceiver));
-    console.log('Post-aToken balance:', postATokenBalance);
-    console.log('Post-receiver balance:', postReceiverBalance);
-
-    console.log('Amount:', amount);
-    console.log('Fee:', fee);
-    console.log('Total required:', totalRequired);
-    console.log('Actual balance increase:', postATokenBalance - preATokenBalance);
-    console.log('Receiver balance change:', preReceiverBalance - postReceiverBalance);
 
     // Verify the balance increase matches our calculation
     require(
