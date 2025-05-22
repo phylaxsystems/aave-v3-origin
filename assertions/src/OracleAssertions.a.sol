@@ -26,7 +26,15 @@ contract OracleAssertions is Assertion {
         registerCallTrigger(this.assertBorrowPriceDeviation.selector, pool.borrow.selector);
         registerCallTrigger(this.assertSupplyPriceDeviation.selector, pool.supply.selector);
         registerCallTrigger(this.assertLiquidationPriceDeviation.selector, pool.liquidationCall.selector);
+        // Register triggers for price consistency checks
+        registerCallTrigger(this.assertBorrowPriceConsistency.selector, pool.borrow.selector);
+        registerCallTrigger(this.assertSupplyPriceConsistency.selector, pool.supply.selector);
+        registerCallTrigger(this.assertLiquidationPriceConsistency.selector, pool.liquidationCall.selector);
     }
+
+    /*/////////////////////////////////////////////////////////////////////////////////////////////
+        Don't allow price deviation before / after a tx to be more than 5%
+    /////////////////////////////////////////////////////////////////////////////////////////////*/
 
     /**
      * @notice Asserts that the price of an asset has not deviated by more than the maximum allowed percentage during borrow
@@ -90,5 +98,65 @@ contract OracleAssertions is Assertion {
 
         // Check deviation is within limits
         require(deviation <= MAX_PRICE_DEVIATION_BPS, "oracle price deviation exceeds maximum allowed");
+    }
+
+    /*/////////////////////////////////////////////////////////////////////////////////////////////
+        ORACLE_INVARIANT_B: The price feed should never return different prices 
+        when called multiple times in a single tx
+    /////////////////////////////////////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice Asserts that the oracle price remains consistent during borrow operations
+     */
+    function assertBorrowPriceConsistency() external {
+        PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.borrow.selector);
+        for (uint256 i = 0; i < callInputs.length; i++) {
+            (address asset,,,,) = abi.decode(callInputs[i].input, (address, uint256, uint256, uint16, address));
+            _checkPriceConsistency(asset);
+        }
+    }
+
+    /**
+     * @notice Asserts that the oracle price remains consistent during supply operations
+     */
+    function assertSupplyPriceConsistency() external {
+        PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.supply.selector);
+        for (uint256 i = 0; i < callInputs.length; i++) {
+            (address asset,,,) = abi.decode(callInputs[i].input, (address, uint256, address, uint16));
+            _checkPriceConsistency(asset);
+        }
+    }
+
+    /**
+     * @notice Asserts that the oracle price remains consistent during liquidation operations
+     */
+    function assertLiquidationPriceConsistency() external {
+        PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.liquidationCall.selector);
+        for (uint256 i = 0; i < callInputs.length; i++) {
+            (address collateralAsset, address debtAsset,,,) =
+                abi.decode(callInputs[i].input, (address, address, address, uint256, bool));
+            _checkPriceConsistency(collateralAsset);
+            _checkPriceConsistency(debtAsset);
+        }
+    }
+
+    /**
+     * @notice Internal helper to check price consistency for an asset
+     * @param asset The address of the asset to check
+     */
+    function _checkPriceConsistency(address asset) internal {
+        // Get price at start of transaction
+        ph.forkPreState();
+        uint256 initialPrice = oracle.getAssetPrice(asset);
+
+        // Get price at end of transaction
+        ph.forkPostState();
+        uint256 finalPrice = oracle.getAssetPrice(asset);
+
+        // Skip check if prices are 0
+        require(initialPrice != 0 && finalPrice != 0, "Oracle returned zero price");
+
+        // Check prices are exactly equal
+        require(initialPrice == finalPrice, "Oracle price changed during transaction");
     }
 }
