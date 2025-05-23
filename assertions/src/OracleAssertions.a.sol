@@ -4,7 +4,6 @@ pragma solidity ^0.8.13;
 import {Assertion} from 'credible-std/Assertion.sol';
 import {PhEvm} from 'credible-std/PhEvm.sol';
 import {IAaveOracle} from '../../src/contracts/interfaces/IAaveOracle.sol';
-import {IPoolAddressesProvider} from '../../src/contracts/interfaces/IPoolAddressesProvider.sol';
 import {IPool} from '../../src/contracts/interfaces/IPool.sol';
 
 /**
@@ -12,8 +11,8 @@ import {IPool} from '../../src/contracts/interfaces/IPool.sol';
  * @notice Assertions for Aave V3 oracle price checks
  */
 contract OracleAssertions is Assertion {
-  IAaveOracle public immutable oracle;
-  IPool public immutable pool;
+  IAaveOracle public oracle;
+  IPool public pool;
   uint256 public constant MAX_PRICE_DEVIATION_BPS = 500; // 5% max deviation
 
   constructor(address oracleAddress, address poolAddress) {
@@ -111,7 +110,7 @@ contract OracleAssertions is Assertion {
     }
 
     // Check deviation is within limits
-    require(deviation <= MAX_PRICE_DEVIATION_BPS, 'oracle price deviation exceeds maximum allowed');
+    require(deviation <= MAX_PRICE_DEVIATION_BPS, errorMessage);
   }
 
   /*/////////////////////////////////////////////////////////////////////////////////////////////

@@ -1,19 +1,16 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.10;
 
-import 'forge-std/Test.sol';
+import {Test} from 'forge-std/Test.sol';
 import {CredibleTest} from 'credible-std/CredibleTest.sol';
 import {IPoolAddressesProvider} from '../../src/contracts/interfaces/IPoolAddressesProvider.sol';
 import {IAaveOracle} from '../../src/contracts/interfaces/IAaveOracle.sol';
-import {IPriceOracleGetter} from '../../src/contracts/interfaces/IPriceOracleGetter.sol';
-import {MintableERC20} from '../../src/contracts/mocks/tokens/MintableERC20.sol';
-import {MockAggregator} from '../../src/contracts/mocks/oracle/CLAggregators/MockAggregator.sol';
-import {AaveOracle} from '../../src/contracts/misc/AaveOracle.sol';
 import {OracleAssertions} from '../src/OracleAssertions.a.sol';
 import {IMockPool} from '../src/IMockPool.sol';
 import {DataTypes} from '../../src/contracts/protocol/libraries/types/DataTypes.sol';
 import {IERC20} from '../../src/contracts/dependencies/openzeppelin/contracts/IERC20.sol';
 import {TestnetProcedures} from '../../tests/utils/TestnetProcedures.sol';
+import {MockAggregator} from '../../src/contracts/mocks/oracle/CLAggregators/MockAggregator.sol';
 
 contract OracleAssertionsTest is CredibleTest, Test, TestnetProcedures {
   IPoolAddressesProvider public addressesProvider;
@@ -24,7 +21,7 @@ contract OracleAssertionsTest is CredibleTest, Test, TestnetProcedures {
   IERC20 public underlying;
   IERC20 public variableDebtToken;
   OracleAssertions public assertions;
-  string constant ASSERTION_LABEL = 'OracleAssertions';
+  string public constant ASSERTION_LABEL = 'OracleAssertions';
 
   function setUp() public {
     // Initialize test environment with real contracts
@@ -74,7 +71,7 @@ contract OracleAssertionsTest is CredibleTest, Test, TestnetProcedures {
     vm.stopPrank();
   }
 
-  function test_assertionBorrowPriceDeviation() public {
+  function testAssertionBorrowPriceDeviation() public {
     // Associate the assertion with the protocol
     cl.addAssertion(
       ASSERTION_LABEL,
@@ -103,7 +100,7 @@ contract OracleAssertionsTest is CredibleTest, Test, TestnetProcedures {
     vm.stopPrank();
   }
 
-  function test_assertionSupplyPriceDeviation() public {
+  function testAssertionSupplyPriceDeviation() public {
     // Associate the assertion with the protocol
     cl.addAssertion(
       ASSERTION_LABEL,

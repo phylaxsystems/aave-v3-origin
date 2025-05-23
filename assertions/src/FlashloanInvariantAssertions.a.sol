@@ -4,11 +4,10 @@ pragma solidity ^0.8.13;
 import {Assertion} from 'credible-std/Assertion.sol';
 import {PhEvm} from 'credible-std/PhEvm.sol';
 import {IMockPool} from './IMockPool.sol';
-import {DataTypes} from '../../src/contracts/protocol/libraries/types/DataTypes.sol';
 import {IERC20} from '../../src/contracts/dependencies/openzeppelin/contracts/IERC20.sol';
 
 contract FlashloanPostConditionAssertions is Assertion {
-  IMockPool public immutable pool;
+  IMockPool public pool;
 
   constructor(IMockPool _pool) {
     pool = _pool;
@@ -26,13 +25,10 @@ contract FlashloanPostConditionAssertions is Assertion {
       pool.flashLoanSimple.selector
     );
     for (uint256 i = 0; i < callInputs.length; i++) {
-      (
-        address receiverAddress,
-        address asset,
-        uint256 amount,
-        bytes memory params,
-        uint16 referralCode
-      ) = abi.decode(callInputs[i].input, (address, address, uint256, bytes, uint16));
+      (, address asset, uint256 amount, , ) = abi.decode(
+        callInputs[i].input,
+        (address, address, uint256, bytes, uint16)
+      );
 
       // Get underlying token and aToken
       IERC20 underlying = IERC20(asset);
@@ -47,7 +43,7 @@ contract FlashloanPostConditionAssertions is Assertion {
       uint256 postATokenBalance = underlying.balanceOf(aTokenAddress);
 
       uint256 fee = (amount * 5) / 10000; // 0.05% fee
-      uint256 totalRequired = amount + fee;
+      uint256 totalRequired = preATokenBalance + fee;
 
       require(
         postATokenBalance >= totalRequired,

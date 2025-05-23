@@ -31,7 +31,7 @@ contract TestFlashloanInvariantAssertions is CredibleTest, Test, TestnetProcedur
   address public user;
   address public asset;
   IERC20 public underlying;
-  string constant ASSERTION_LABEL = 'FlashloanInvariantAssertions';
+  string public constant ASSERTION_LABEL = 'FlashloanInvariantAssertions';
   MockFlashLoanReceiver internal mockFlashReceiver;
   MockFlashLoanSimpleReceiver internal mockFlashSimpleReceiver;
 
@@ -56,7 +56,7 @@ contract TestFlashloanInvariantAssertions is CredibleTest, Test, TestnetProcedur
     );
   }
 
-  function test_assertionFlashloanRepayment() public {
+  function testAssertionFlashloanRepayment() public {
     // Associate the assertion with the protocol
     cl.addAssertion(
       ASSERTION_LABEL,
@@ -91,7 +91,7 @@ contract TestFlashloanInvariantAssertions is CredibleTest, Test, TestnetProcedur
   }
 
   // Test flashloan following Pool.FlashLoans.t.sol pattern
-  function test_Flashloan() public {
+  function testFlashloan() public {
     // Transfer ownership of the token to the mock receiver
     vm.prank(poolAdmin);
     TestnetERC20(asset).transferOwnership(address(mockFlashSimpleReceiver));
@@ -112,7 +112,7 @@ contract TestFlashloanInvariantAssertions is CredibleTest, Test, TestnetProcedur
   }
 
   // Test that mimics the assertion's logic
-  function test_FlashloanFeeCalculation() public {
+  function testFlashloanFeeCalculation() public {
     // Transfer ownership of the token to the mock receiver
     vm.prank(poolAdmin);
     TestnetERC20(tokenList.usdx).transferOwnership(address(mockFlashSimpleReceiver));
@@ -122,15 +122,12 @@ contract TestFlashloanInvariantAssertions is CredibleTest, Test, TestnetProcedur
 
     // Calculate fee using the pool's premium rate
     uint256 fee = (amount * 5) / 10000; // 0.05% fee (5/10000 = 0.0005 = 0.05%)
-    uint256 totalRequired = amount + fee;
 
     // Get aToken address
     address aTokenAddress = contracts.poolProxy.getReserveData(tokenList.usdx).aTokenAddress;
-    IERC20 aToken = IERC20(aTokenAddress);
-
-    // Get initial balances
     uint256 preATokenBalance = usdx.balanceOf(aTokenAddress);
-    uint256 preReceiverBalance = usdx.balanceOf(address(mockFlashSimpleReceiver));
+
+    uint256 totalRequired = preATokenBalance + fee;
 
     // Execute flashloan
     vm.prank(alice);
@@ -144,7 +141,6 @@ contract TestFlashloanInvariantAssertions is CredibleTest, Test, TestnetProcedur
 
     // Get final balances
     uint256 postATokenBalance = usdx.balanceOf(aTokenAddress);
-    uint256 postReceiverBalance = usdx.balanceOf(address(mockFlashSimpleReceiver));
 
     // Verify the balance increase matches our calculation
     require(
@@ -153,7 +149,7 @@ contract TestFlashloanInvariantAssertions is CredibleTest, Test, TestnetProcedur
     );
   }
 
-  function test_flashloan_simple() public {
+  function testFlashloanSimple() public {
     // Transfer ownership of the token to the mock receiver
     vm.prank(poolAdmin);
     TestnetERC20(tokenList.usdx).transferOwnership(address(mockFlashSimpleReceiver));

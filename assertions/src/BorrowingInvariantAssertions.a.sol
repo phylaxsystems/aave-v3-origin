@@ -6,12 +6,11 @@ import {PhEvm} from 'credible-std/PhEvm.sol';
 import {DataTypes} from '../../src/contracts/protocol/libraries/types/DataTypes.sol';
 import {IERC20} from '../../src/contracts/dependencies/openzeppelin/contracts/IERC20.sol';
 import {ReserveConfiguration} from '../../src/contracts/protocol/libraries/configuration/ReserveConfiguration.sol';
-import {UserConfiguration} from '../../src/contracts/protocol/libraries/configuration/UserConfiguration.sol';
 import {IVariableDebtToken} from '../../src/contracts/interfaces/IVariableDebtToken.sol';
 import {IMockPool} from './IMockPool.sol';
 
 contract BorrowingPostConditionAssertions is Assertion {
-  IMockPool public immutable pool;
+  IMockPool public pool;
 
   constructor(IMockPool _pool) {
     pool = _pool;
@@ -241,16 +240,12 @@ contract BorrowingPostConditionAssertions is Assertion {
       ) {
         // Get indexed fields from topics
         address reserve = address(uint160(uint256(logs[i].topics[1])));
-        address onBehalfOf = address(uint160(uint256(logs[i].topics[2])));
-        uint16 referralCode = uint16(uint256(logs[i].topics[3]));
 
         // Get non-indexed fields from data
-        (
-          address user,
-          uint256 amount,
-          DataTypes.InterestRateMode interestRateMode,
-          uint256 borrowRate
-        ) = abi.decode(logs[i].data, (address, uint256, DataTypes.InterestRateMode, uint256));
+        (address user, uint256 amount, , ) = abi.decode(
+          logs[i].data,
+          (address, uint256, DataTypes.InterestRateMode, uint256)
+        );
 
         // Get underlying token
         IERC20 underlying = IERC20(reserve);

@@ -27,7 +27,7 @@ contract TestBorrowingInvariantAssertions is CredibleTest, Test, TestnetProcedur
   address public asset;
   IERC20 public underlying;
   IERC20 public variableDebtToken;
-  string constant ASSERTION_LABEL = 'BorrowingInvariantAssertions';
+  string public constant ASSERTION_LABEL = 'BorrowingInvariantAssertions';
 
   function setUp() public {
     // Initialize test environment with real contracts
@@ -60,7 +60,7 @@ contract TestBorrowingInvariantAssertions is CredibleTest, Test, TestnetProcedur
     vm.stopPrank();
   }
 
-  function test_assertionLiabilityDecrease() public {
+  function testAssertionLiabilityDecrease() public {
     uint256 repayAmount = 100e6;
 
     // Associate the assertion with the protocol
@@ -91,7 +91,7 @@ contract TestBorrowingInvariantAssertions is CredibleTest, Test, TestnetProcedur
     vm.stopPrank();
   }
 
-  function test_liabilityDecrease_regular() public {
+  function testLiabilityDecreaseRegular() public {
     uint256 repayAmount = 100e6;
 
     // Set up user with enough balance to repay (matching setUp)
@@ -125,7 +125,7 @@ contract TestBorrowingInvariantAssertions is CredibleTest, Test, TestnetProcedur
     vm.stopPrank();
   }
 
-  function test_assertionUnhealthyBorrowPrevention() public {
+  function testAssertionUnhealthyBorrowPrevention() public {
     // Associate the assertion with the protocol
     cl.addAssertion(
       ASSERTION_LABEL,

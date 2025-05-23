@@ -22,10 +22,8 @@ import {CredibleTest} from 'credible-std/CredibleTest.sol';
 import {LiquidationInvariantAssertions} from '../src/LiquidationInvariantAssertions.a.sol';
 import {IMockPool} from '../src/IMockPool.sol';
 import {WorkingProtocol} from '../mocks/WorkingProtocol.sol';
-import {DataTypes} from '../../src/contracts/protocol/libraries/types/DataTypes.sol';
 import {IERC20} from '../../src/contracts/dependencies/openzeppelin/contracts/IERC20.sol';
 import {TestnetProcedures} from '../../tests/utils/TestnetProcedures.sol';
-import {IPriceOracleGetter} from '../../src/contracts/interfaces/IPriceOracleGetter.sol';
 import {IAaveOracle} from '../../src/contracts/interfaces/IAaveOracle.sol';
 import {LiquidationDataProvider} from '../../src/contracts/helpers/LiquidationDataProvider.sol';
 
@@ -38,7 +36,7 @@ contract TestLiquidationInvariantAssertions is CredibleTest, Test, TestnetProced
   address public testDebtAsset;
   IERC20 public collateralUnderlying;
   IERC20 public debtUnderlying;
-  string constant ASSERTION_LABEL = 'LiquidationInvariantAssertions';
+  string public constant ASSERTION_LABEL = 'LiquidationInvariantAssertions';
   IAaveOracle public aaveOracle;
   LiquidationDataProvider public liquidationDataProvider;
 
@@ -66,7 +64,7 @@ contract TestLiquidationInvariantAssertions is CredibleTest, Test, TestnetProced
     vm.stopPrank();
   }
 
-  function test_assertionHealthFactorThreshold() public {
+  function testAssertionHealthFactorThreshold() public {
     // Associate the assertion with the protocol
     cl.addAssertion(
       ASSERTION_LABEL,
@@ -98,7 +96,7 @@ contract TestLiquidationInvariantAssertions is CredibleTest, Test, TestnetProced
     vm.stopPrank();
   }
 
-  function test_assertionGracePeriod() public {
+  function testAssertionGracePeriod() public {
     // Associate the assertion with the protocol
     cl.addAssertion(
       ASSERTION_LABEL,

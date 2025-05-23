@@ -5,12 +5,10 @@ import {Assertion} from 'credible-std/Assertion.sol';
 import {PhEvm} from 'credible-std/PhEvm.sol';
 import {IMockPool} from './IMockPool.sol';
 import {DataTypes} from '../../src/contracts/protocol/libraries/types/DataTypes.sol';
-import {IERC20} from '../../src/contracts/dependencies/openzeppelin/contracts/IERC20.sol';
 import {ReserveConfiguration} from '../../src/contracts/protocol/libraries/configuration/ReserveConfiguration.sol';
-import {UserConfiguration} from '../../src/contracts/protocol/libraries/configuration/UserConfiguration.sol';
 
 contract LiquidationInvariantAssertions is Assertion {
-  IMockPool public immutable pool;
+  IMockPool public pool;
 
   constructor(IMockPool _pool) {
     pool = _pool;
@@ -35,13 +33,10 @@ contract LiquidationInvariantAssertions is Assertion {
       pool.liquidationCall.selector
     );
     for (uint256 i = 0; i < callInputs.length; i++) {
-      (
-        address collateralAsset,
-        address debtAsset,
-        address user,
-        uint256 debtToCover,
-        bool receiveAToken
-      ) = abi.decode(callInputs[i].input, (address, address, address, uint256, bool));
+      (, , address user, , ) = abi.decode(
+        callInputs[i].input,
+        (address, address, address, uint256, bool)
+      );
 
       // Get health factor before liquidation
       ph.forkPreState();
@@ -59,13 +54,10 @@ contract LiquidationInvariantAssertions is Assertion {
       pool.liquidationCall.selector
     );
     for (uint256 i = 0; i < callInputs.length; i++) {
-      (
-        address collateralAsset,
-        address debtAsset,
-        address user,
-        uint256 debtToCover,
-        bool receiveAToken
-      ) = abi.decode(callInputs[i].input, (address, address, address, uint256, bool));
+      (address collateralAsset, , , , ) = abi.decode(
+        callInputs[i].input,
+        (address, address, address, uint256, bool)
+      );
 
       uint40 gracePeriodUntil = pool.getLiquidationGracePeriod(collateralAsset);
       require(block.timestamp >= gracePeriodUntil, 'Collateral in grace period');
@@ -80,13 +72,10 @@ contract LiquidationInvariantAssertions is Assertion {
       pool.liquidationCall.selector
     );
     for (uint256 i = 0; i < callInputs.length; i++) {
-      (
-        address collateralAsset,
-        address debtAsset,
-        address user,
-        uint256 debtToCover,
-        bool receiveAToken
-      ) = abi.decode(callInputs[i].input, (address, address, address, uint256, bool));
+      (, , address user, uint256 debtToCover, ) = abi.decode(
+        callInputs[i].input,
+        (address, address, address, uint256, bool)
+      );
 
       // Get user data before liquidation
       ph.forkPreState();
@@ -112,18 +101,10 @@ contract LiquidationInvariantAssertions is Assertion {
       pool.liquidationCall.selector
     );
     for (uint256 i = 0; i < callInputs.length; i++) {
-      (
-        address collateralAsset,
-        address debtAsset,
-        address user,
-        uint256 debtToCover,
-        bool receiveAToken
-      ) = abi.decode(callInputs[i].input, (address, address, address, uint256, bool));
-
-      // Get balances before
-      ph.forkPreState();
-      uint256 preCollateralBalance = pool.getUserCollateralBalance(user, collateralAsset);
-      uint256 preDebtBalance = pool.getUserDebtBalance(user, debtAsset);
+      (address collateralAsset, address debtAsset, address user, , ) = abi.decode(
+        callInputs[i].input,
+        (address, address, address, uint256, bool)
+      );
 
       // Get balances after
       ph.forkPostState();
@@ -150,13 +131,10 @@ contract LiquidationInvariantAssertions is Assertion {
       pool.liquidationCall.selector
     );
     for (uint256 i = 0; i < callInputs.length; i++) {
-      (
-        address collateralAsset,
-        address debtAsset,
-        address user,
-        uint256 debtToCover,
-        bool receiveAToken
-      ) = abi.decode(callInputs[i].input, (address, address, address, uint256, bool));
+      (, , address user, , ) = abi.decode(
+        callInputs[i].input,
+        (address, address, address, uint256, bool)
+      );
 
       // Get user data after liquidation
       ph.forkPostState();
@@ -176,16 +154,10 @@ contract LiquidationInvariantAssertions is Assertion {
       pool.liquidationCall.selector
     );
     for (uint256 i = 0; i < callInputs.length; i++) {
-      (
-        address collateralAsset,
-        address debtAsset,
-        address user,
-        uint256 debtToCover,
-        bool receiveAToken
-      ) = abi.decode(callInputs[i].input, (address, address, address, uint256, bool));
-
-      // Get reserve data
-      DataTypes.ReserveDataLegacy memory debtReserve = pool.getReserveData(debtAsset);
+      (, address debtAsset, address user, , ) = abi.decode(
+        callInputs[i].input,
+        (address, address, address, uint256, bool)
+      );
 
       // Get deficit before
       ph.forkPreState();
@@ -221,13 +193,10 @@ contract LiquidationInvariantAssertions is Assertion {
       pool.liquidationCall.selector
     );
     for (uint256 i = 0; i < callInputs.length; i++) {
-      (
-        address collateralAsset,
-        address debtAsset,
-        address user,
-        uint256 debtToCover,
-        bool receiveAToken
-      ) = abi.decode(callInputs[i].input, (address, address, address, uint256, bool));
+      (, , address user, , ) = abi.decode(
+        callInputs[i].input,
+        (address, address, address, uint256, bool)
+      );
 
       // Get user debt before
       ph.forkPreState();
@@ -251,13 +220,10 @@ contract LiquidationInvariantAssertions is Assertion {
       pool.liquidationCall.selector
     );
     for (uint256 i = 0; i < callInputs.length; i++) {
-      (
-        address collateralAsset,
-        address debtAsset,
-        address user,
-        uint256 debtToCover,
-        bool receiveAToken
-      ) = abi.decode(callInputs[i].input, (address, address, address, uint256, bool));
+      (address collateralAsset, address debtAsset, , , ) = abi.decode(
+        callInputs[i].input,
+        (address, address, address, uint256, bool)
+      );
 
       // Get reserve data
       DataTypes.ReserveDataLegacy memory collateralReserve = pool.getReserveData(collateralAsset);

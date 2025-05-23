@@ -28,7 +28,7 @@ contract TestMockedLendingInvariantAssertions is CredibleTest, Test {
   address public user;
   address public asset;
   IERC20 public underlying;
-  string constant ASSERTION_LABEL = 'LendingInvariantAssertions';
+  string public constant ASSERTION_LABEL = 'LendingInvariantAssertions';
 
   function setUp() public {
     // Deploy mock pool
@@ -62,7 +62,7 @@ contract TestMockedLendingInvariantAssertions is CredibleTest, Test {
     pool.setBreakDepositBalance(true);
   }
 
-  function test_assertionDepositBalanceChangesFailure() public {
+  function testAssertionDepositBalanceChangesFailure() public {
     uint256 depositAmount = 100e6;
 
     // Associate the assertion with the protocol
@@ -87,7 +87,7 @@ contract TestMockedLendingInvariantAssertions is CredibleTest, Test {
     vm.stopPrank();
   }
 
-  function test_assertionWithdrawBalanceChangesFailure() public {
+  function testAssertionWithdrawBalanceChangesFailure() public {
     uint256 depositAmount = 100e6;
     uint256 withdrawAmount = 50e6;
 

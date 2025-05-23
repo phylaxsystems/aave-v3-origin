@@ -16,7 +16,6 @@ import {Test} from 'forge-std/Test.sol';
 import {CredibleTest} from 'credible-std/CredibleTest.sol';
 import {LendingPostConditionAssertions} from '../src/LendingInvariantAssertions.a.sol';
 import {IMockPool} from '../src/IMockPool.sol';
-import {DataTypes} from '../../src/contracts/protocol/libraries/types/DataTypes.sol';
 import {IERC20} from '../../src/contracts/dependencies/openzeppelin/contracts/IERC20.sol';
 import {TestnetProcedures} from '../../tests/utils/TestnetProcedures.sol';
 
@@ -26,7 +25,7 @@ contract TestLendingInvariantAssertions is CredibleTest, Test, TestnetProcedures
   address public user;
   address public asset;
   IERC20 public underlying;
-  string constant ASSERTION_LABEL = 'LendingInvariantAssertions';
+  string public constant ASSERTION_LABEL = 'LendingInvariantAssertions';
 
   function setUp() public {
     // Initialize test environment with real contracts
@@ -46,7 +45,7 @@ contract TestLendingInvariantAssertions is CredibleTest, Test, TestnetProcedures
     underlying.transfer(user, 1000e6);
   }
 
-  function test_assertionDepositBalanceChanges() public {
+  function testAssertionDepositBalanceChanges() public {
     uint256 depositAmount = 100e6;
 
     // Associate the assertion with the protocol
@@ -71,7 +70,7 @@ contract TestLendingInvariantAssertions is CredibleTest, Test, TestnetProcedures
     vm.stopPrank();
   }
 
-  function test_assertionWithdrawBalanceChanges() public {
+  function testAssertionWithdrawBalanceChanges() public {
     uint256 depositAmount = 100e6;
     uint256 withdrawAmount = 50e6;
 

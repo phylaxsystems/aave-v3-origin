@@ -12,8 +12,8 @@ import {DataTypes} from '../../src/contracts/protocol/libraries/types/DataTypes.
  * @notice Assertions for basic protocol invariants related to token balances and borrowing states for a specific asset
  */
 contract BaseInvariants is Assertion {
-  IPool public immutable pool;
-  IERC20 public immutable asset;
+  IPool public pool;
+  IERC20 public asset;
 
   constructor(address poolAddress, address assetAddress) {
     pool = IPool(poolAddress);
@@ -75,8 +75,10 @@ contract BaseInvariants is Assertion {
 
     // Process liquidation operations (decrease debt)
     for (uint256 i = 0; i < liquidationCalls.length; i++) {
-      (address collateralAsset, address debtAsset, address user, uint256 debtToCover, ) = abi
-        .decode(liquidationCalls[i].input, (address, address, address, uint256, bool));
+      (, address debtAsset, , uint256 debtToCover, ) = abi.decode(
+        liquidationCalls[i].input,
+        (address, address, address, uint256, bool)
+      );
       if (debtAsset == address(asset)) {
         balanceChange -= int256(debtToCover);
       }

@@ -27,7 +27,7 @@ contract TestMockedBorrowingInvariantAssertions is CredibleTest, Test {
   address public user;
   address public asset;
   IERC20 public underlying;
-  string constant ASSERTION_LABEL = 'BorrowingInvariantAssertions';
+  string public constant ASSERTION_LABEL = 'BorrowingInvariantAssertions';
 
   function setUp() public {
     // Deploy mock pool
@@ -48,7 +48,7 @@ contract TestMockedBorrowingInvariantAssertions is CredibleTest, Test {
     pool.setBreakRepayDebt(true);
   }
 
-  function test_assertionLiabilityDecreaseFailure() public {
+  function testAssertionLiabilityDecreaseFailure() public {
     uint256 repayAmount = 100e6;
 
     // Associate the assertion with the protocol
@@ -79,7 +79,7 @@ contract TestMockedBorrowingInvariantAssertions is CredibleTest, Test {
     vm.stopPrank();
   }
 
-  function test_assertionUnhealthyBorrowPreventionFailure() public {
+  function testAssertionUnhealthyBorrowPreventionFailure() public {
     // Set up an unhealthy user (health factor < 1e18)
     pool.setUserDebt(user, 1000e6); // High debt to make user unhealthy
 

@@ -6,7 +6,6 @@ import {CredibleTest} from 'credible-std/CredibleTest.sol';
 import {LiquidationInvariantAssertions} from '../src/LiquidationInvariantAssertions.a.sol';
 import {IMockPool} from '../src/IMockPool.sol';
 import {BrokenPool} from '../mocks/BrokenPool.sol';
-import {DataTypes} from '../../src/contracts/protocol/libraries/types/DataTypes.sol';
 import {IERC20} from '../../src/contracts/dependencies/openzeppelin/contracts/IERC20.sol';
 import {TestnetProcedures} from '../../tests/utils/TestnetProcedures.sol';
 
@@ -19,7 +18,7 @@ contract TestMockedLiquidationInvariantAssertions is CredibleTest, Test, Testnet
   address public debtAsset;
   IERC20 public collateralUnderlying;
   IERC20 public debtUnderlying;
-  string constant ASSERTION_LABEL = 'LiquidationInvariantAssertions';
+  string public constant ASSERTION_LABEL = 'LiquidationInvariantAssertions';
 
   function setUp() public {
     // Deploy broken protocol
@@ -45,7 +44,7 @@ contract TestMockedLiquidationInvariantAssertions is CredibleTest, Test, Testnet
     vm.stopPrank();
   }
 
-  function test_verifyHealthFactor() public {
+  function testVerifyHealthFactor() public {
     // Set health factor
     BrokenPool(address(pool)).setUserHealthFactor(user, 1.5e18);
 
@@ -54,7 +53,7 @@ contract TestMockedLiquidationInvariantAssertions is CredibleTest, Test, Testnet
     require(healthFactor == 1.5e18, 'Health factor not set correctly');
   }
 
-  function test_assertionHealthFactorThreshold_Fails() public {
+  function testAssertionHealthFactorThresholdFails() public {
     // Associate the assertion with the protocol
     cl.addAssertion(
       ASSERTION_LABEL,
@@ -92,7 +91,7 @@ contract TestMockedLiquidationInvariantAssertions is CredibleTest, Test, Testnet
     vm.stopPrank();
   }
 
-  function test_assertionGracePeriod_Fails() public {
+  function testAssertionGracePeriodFails() public {
     // Associate the assertion with the protocol
     cl.addAssertion(
       ASSERTION_LABEL,
@@ -131,7 +130,7 @@ contract TestMockedLiquidationInvariantAssertions is CredibleTest, Test, Testnet
     vm.stopPrank();
   }
 
-  function test_assertionCloseFactorConditions_Fails() public {
+  function testAssertionCloseFactorConditionsFails() public {
     // Associate the assertion with the protocol
     cl.addAssertion(
       ASSERTION_LABEL,
@@ -166,7 +165,7 @@ contract TestMockedLiquidationInvariantAssertions is CredibleTest, Test, Testnet
     vm.stopPrank();
   }
 
-  function test_assertionLiquidationAmounts_Fails() public {
+  function testAssertionLiquidationAmountsFails() public {
     // Associate the assertion with the protocol
     cl.addAssertion(
       ASSERTION_LABEL,
@@ -201,7 +200,7 @@ contract TestMockedLiquidationInvariantAssertions is CredibleTest, Test, Testnet
     vm.stopPrank();
   }
 
-  function test_assertionDeficitCreation_Fails() public {
+  function testAssertionDeficitCreationFails() public {
     // Associate the assertion with the protocol
     cl.addAssertion(
       ASSERTION_LABEL,
@@ -235,7 +234,7 @@ contract TestMockedLiquidationInvariantAssertions is CredibleTest, Test, Testnet
     vm.stopPrank();
   }
 
-  function test_assertionDeficitAccounting_Fails() public {
+  function testAssertionDeficitAccountingFails() public {
     // Associate the assertion with the protocol
     cl.addAssertion(
       ASSERTION_LABEL,
@@ -269,7 +268,7 @@ contract TestMockedLiquidationInvariantAssertions is CredibleTest, Test, Testnet
     vm.stopPrank();
   }
 
-  function test_assertionDeficitAmount_Fails() public {
+  function testAssertionDeficitAmountFails() public {
     // Associate the assertion with the protocol
     cl.addAssertion(
       ASSERTION_LABEL,
@@ -303,7 +302,7 @@ contract TestMockedLiquidationInvariantAssertions is CredibleTest, Test, Testnet
     vm.stopPrank();
   }
 
-  function test_assertionActiveReserveDeficit_Fails() public {
+  function testAssertionActiveReserveDeficitFails() public {
     // Associate the assertion with the protocol
     cl.addAssertion(
       ASSERTION_LABEL,

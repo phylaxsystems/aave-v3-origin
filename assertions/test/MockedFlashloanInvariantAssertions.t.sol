@@ -5,9 +5,7 @@ import {Test} from 'forge-std/Test.sol';
 import {CredibleTest} from 'credible-std/CredibleTest.sol';
 import {FlashloanPostConditionAssertions} from '../src/FlashloanInvariantAssertions.a.sol';
 import {BrokenPool} from '../mocks/BrokenPool.sol';
-import {DataTypes} from '../../src/contracts/protocol/libraries/types/DataTypes.sol';
 import {IERC20} from '../../src/contracts/dependencies/openzeppelin/contracts/IERC20.sol';
-import {ReserveConfiguration} from '../../src/contracts/protocol/libraries/configuration/ReserveConfiguration.sol';
 import {TestnetERC20} from '../../src/contracts/mocks/testnet-helpers/TestnetERC20.sol';
 
 contract TestMockedFlashloanInvariantAssertions is CredibleTest, Test {
@@ -16,7 +14,7 @@ contract TestMockedFlashloanInvariantAssertions is CredibleTest, Test {
   address public user;
   TestnetERC20 public asset;
   IERC20 public underlying;
-  string constant ASSERTION_LABEL = 'FlashloanInvariantAssertions';
+  string public constant ASSERTION_LABEL = 'FlashloanInvariantAssertions';
 
   function setUp() public {
     // Deploy mock pool
@@ -42,7 +40,7 @@ contract TestMockedFlashloanInvariantAssertions is CredibleTest, Test {
     asset.mint(address(pool), 1000e18);
   }
 
-  function test_assertionFlashloanRepaymentFailure() public {
+  function testAssertionFlashloanRepaymentFailure() public {
     uint256 amount = 100e18;
     bytes memory emptyParams;
 
