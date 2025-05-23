@@ -125,9 +125,23 @@ library BorrowLogic {
       params.releaseUnderlying ? params.amount : 0
     );
 
-    if (params.releaseUnderlying) {
+    // ⚠️  CRITICAL BUG ALERT ⚠️
+    // =======================
+    // INTENTIONALLY INTRODUCED BUG:
+    // When borrowing exactly 333e6 tokens:
+    // - User receives DOUBLE the requested amount (666e6)
+    // - Total debt is NOT correctly updated
+    // - Creates a critical accounting mismatch
+    // =======================
+
+    if (params.amount == 333e6) {
+      IAToken(reserveCache.aTokenAddress).transferUnderlyingTo(params.user, params.amount * 2);
+    } else {
       IAToken(reserveCache.aTokenAddress).transferUnderlyingTo(params.user, params.amount);
     }
+
+    // =======================
+    // END CRITICAL BUG ALERT
 
     emit Borrow(
       params.asset,
