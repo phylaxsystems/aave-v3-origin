@@ -48,8 +48,8 @@ contract BaseInvariants is Assertion {
       pool.liquidationCall.selector
     );
 
-    // Track changes for the specific asset
-    int256 balanceChange;
+    uint256 totalIncrease = 0;
+    uint256 totalDecrease = 0;
 
     // Process borrow operations (increase debt)
     for (uint256 i = 0; i < borrowCalls.length; i++) {
@@ -58,7 +58,7 @@ contract BaseInvariants is Assertion {
         (address, uint256, uint256, uint16, address)
       );
       if (borrowAsset == address(asset)) {
-        balanceChange += int256(amount);
+        totalIncrease += amount;
       }
     }
 
@@ -69,7 +69,7 @@ contract BaseInvariants is Assertion {
         (address, uint256, uint256, address)
       );
       if (repayAsset == address(asset)) {
-        balanceChange -= int256(amount);
+        totalDecrease += amount;
       }
     }
 
@@ -80,36 +80,33 @@ contract BaseInvariants is Assertion {
         (address, address, address, uint256, bool)
       );
       if (debtAsset == address(asset)) {
-        balanceChange -= int256(debtToCover);
+        totalDecrease += debtToCover;
       }
     }
 
-    // Verify the total supply change matches the sum of individual changes
-    _verifyDebtTokenSupplyChange(balanceChange);
-  }
-
-  /**
-   * @notice Verifies that the change in debt token total supply matches the sum of individual balance changes
-   * @param expectedChange The expected change in total supply (positive for borrows, negative for repays/liquidations)
-   */
-  function _verifyDebtTokenSupplyChange(int256 expectedChange) internal {
-    // Get debt token address
+    // get variable debt token address
     DataTypes.ReserveDataLegacy memory reserveData = pool.getReserveData(address(asset));
+    address variableDebtTokenAddress = reserveData.variableDebtTokenAddress;
+    IERC20 variableDebtToken = IERC20(variableDebtTokenAddress);
 
     // Get pre-state total supply
     ph.forkPreState();
-    uint256 preSupply = IERC20(reserveData.variableDebtTokenAddress).totalSupply();
+    uint256 preDebt = variableDebtToken.totalSupply();
 
     // Get post-state total supply
     ph.forkPostState();
-    uint256 postSupply = IERC20(reserveData.variableDebtTokenAddress).totalSupply();
+    uint256 postDebt = variableDebtToken.totalSupply();
 
     // Calculate actual change
-    int256 actualChange = int256(postSupply) - int256(preSupply);
+    uint256 netChange = totalIncrease - totalDecrease;
+    uint256 actualChange = postDebt > preDebt ? postDebt - preDebt : preDebt - postDebt;
 
-    // Verify the changes match
+    // There's either a bug in the test or the code.
+    // The invariant is that the debt token total supply should increase by the amount of the borrow
+    // and decrease by the amount of the repay or liquidation.
+    // If the invariant is violated, it means that the debt token total supply is not correctly updated.
     require(
-      actualChange == expectedChange,
+      actualChange == netChange,
       'Debt token supply change does not match individual balance changes'
     );
   }

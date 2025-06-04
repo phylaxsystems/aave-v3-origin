@@ -40,7 +40,7 @@ contract TestBorrowingInvariantAssertions is CredibleTest, Test, TestnetProcedur
     underlying = IERC20(asset);
 
     // Deploy assertions contract
-    assertions = new BaseInvariants(address(pool), asset);
+    assertions = new BaseInvariants(address(pool), address(underlying));
 
     // Get variable debt token
     (, , address variableDebtUSDX) = contracts.protocolDataProvider.getReserveTokensAddresses(
@@ -48,16 +48,11 @@ contract TestBorrowingInvariantAssertions is CredibleTest, Test, TestnetProcedur
     );
     variableDebtToken = IERC20(variableDebtUSDX);
 
-    // Setup initial positions
+    // Set up fresh user with collateral
+    deal(asset, user, 2000e6);
     vm.startPrank(user);
-    // Supply collateral
     underlying.approve(address(pool), type(uint256).max);
-    pool.supply(asset, 1000e6, user, 0);
-    // Borrow some amount
-    pool.borrow(asset, 500e6, 2, 0, user);
-    // Ensure user has enough tokens to repay
-    underlying.transfer(user, 1000e6);
-
+    pool.supply(asset, 1000e6, user, 0); // Supply collateral first
     vm.stopPrank();
   }
 
@@ -66,23 +61,15 @@ contract TestBorrowingInvariantAssertions is CredibleTest, Test, TestnetProcedur
     // When trying to borrow exactly 333e6, the user will receive double the amount
     // and the total debt will not be correctly updated
 
-    // Use a fresh user (bob) to avoid conflicts with alice's existing state
-    address freshUser = bob;
-
     // Associate the assertion with the protocol
     cl.addAssertion(
       ASSERTION_LABEL,
       address(pool),
       type(BaseInvariants).creationCode,
-      abi.encode(address(pool), asset)
+      abi.encode(address(pool), address(underlying))
     );
 
-    // Set up fresh user with collateral
-    deal(asset, freshUser, 2000e6);
-    vm.startPrank(freshUser);
-    underlying.approve(address(pool), type(uint256).max);
-    pool.supply(asset, 1000e6, freshUser, 0); // Supply collateral first
-
+    vm.prank(user);
     vm.expectRevert('Assertions Reverted');
     // This should fail assertions because the user will receive double tokens
     cl.validate(
@@ -93,10 +80,67 @@ contract TestBorrowingInvariantAssertions is CredibleTest, Test, TestnetProcedur
         pool.borrow.selector,
         asset,
         333e6, // borrow the evil amount
-        DataTypes.InterestRateMode.VARIABLE,
+        uint256(DataTypes.InterestRateMode.VARIABLE),
         0,
-        freshUser
+        user
       )
+    );
+  }
+
+  function testAssertionBorrowNormal() public {
+    // Associate the assertion with the protocol
+    cl.addAssertion(
+      ASSERTION_LABEL,
+      address(pool),
+      type(BaseInvariants).creationCode,
+      abi.encode(address(pool), address(underlying))
+    );
+
+    vm.prank(user);
+    // This should NOT fail assertions because the borrow amount is not the magic number
+    cl.validate(
+      ASSERTION_LABEL,
+      address(pool),
+      0,
+      abi.encodeWithSelector(
+        pool.borrow.selector,
+        asset,
+        100e6, // borrow a normal amount
+        uint256(DataTypes.InterestRateMode.VARIABLE),
+        0,
+        user
+      )
+    );
+  }
+
+  function testBorrowInvariantManual() public {
+    vm.startPrank(user);
+
+    // Get aToken address for the asset
+    (address aTokenAddr, , ) = contracts.protocolDataProvider.getReserveTokensAddresses(asset);
+    IERC20 aToken = IERC20(aTokenAddr);
+
+    // --- Normal borrow: should work as expected ---
+    uint256 beforeDebtTotal = variableDebtToken.totalSupply();
+    uint256 beforeATokenTotal = aToken.totalSupply();
+    emit log_named_uint('aToken totalSupply before normal borrow', beforeATokenTotal);
+    emit log_named_uint('DebtToken totalSupply before normal borrow', beforeDebtTotal);
+    pool.borrow(asset, 100e6, uint256(DataTypes.InterestRateMode.VARIABLE), 0, user);
+    uint256 afterDebtTotal = variableDebtToken.totalSupply();
+    uint256 afterATokenTotal = aToken.totalSupply();
+    emit log_named_uint('aToken totalSupply after normal borrow', afterATokenTotal);
+    emit log_named_uint('DebtToken totalSupply after normal borrow', afterDebtTotal);
+    emit log_named_uint('aToken delta (normal)', afterATokenTotal - beforeATokenTotal);
+    emit log_named_uint('DebtToken delta (normal)', afterDebtTotal - beforeDebtTotal);
+    assertEq(
+      afterATokenTotal - beforeATokenTotal,
+      0,
+      'aToken totalSupply should not change on borrow'
+    );
+    assertEq(
+      afterDebtTotal - beforeDebtTotal,
+      100e6,
+      'DebtToken totalSupply should increase by borrowed amount'
     );
     vm.stopPrank();
   }

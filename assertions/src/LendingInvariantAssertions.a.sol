@@ -22,7 +22,11 @@ contract LendingPostConditionAssertions is Assertion {
     registerCallTrigger(this.assertDepositConditions.selector, pool.supply.selector);
     registerCallTrigger(this.assertWithdrawConditions.selector, pool.withdraw.selector);
     registerCallTrigger(this.assertTotalSupplyCap.selector, pool.supply.selector);
-    registerCallTrigger(this.assertDepositBalanceChanges.selector, pool.supply.selector);
+    registerCallTrigger(
+      this.assertDepositBalanceChangesWithoutHelper.selector,
+      pool.supply.selector
+    );
+    //registerCallTrigger(this.assertDepositBalanceChanges.selector, pool.supply.selector);
     registerCallTrigger(this.assertWithdrawBalanceChanges.selector, pool.withdraw.selector);
     registerCallTrigger(this.assertCollateralWithdrawHealth.selector, pool.withdraw.selector);
   }
@@ -87,33 +91,154 @@ contract LendingPostConditionAssertions is Assertion {
     }
   }
 
-  // LENDING_HPOST_D: After a successful deposit the sender underlying balance should decrease by the amount deposited
-  // LENDING_HPOST_E: After a successful deposit the onBehalf AToken balance should increase by the amount deposited
-  function assertDepositBalanceChanges() external {
+  // // LENDING_HPOST_D: After a successful deposit the sender underlying balance should decrease by the amount deposited
+  // // LENDING_HPOST_E: After a successful deposit the onBehalf AToken balance should increase by the amount deposited
+  // function assertDepositBalanceChanges() external {
+  //   PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.supply.selector);
+  //   // Should never happen, due to the trigger being registered for the function
+  //   if (callInputs.length == 0) {
+  //     return;
+  //   } else if (callInputs.length == 1) {
+  //     // Be specific for 1 input to save gas
+  //     (address asset, uint256 amount, address onBehalfOf, ) = abi.decode(
+  //       callInputs[0].input,
+  //       (address, uint256, address, uint16)
+  //     );
+  //     address caller = callInputs[0].caller;
+  //     _checkDepositBalanceChange(asset, caller, onBehalfOf, amount);
+  //   } else {
+  //     // Accumulate all deposit amounts and compare to deltas of sender balance and aToken balance
+  //     uint256 totalDepositAmount = 0;
+  //     address asset;
+  //     uint256 amount;
+  //     address onBehalfOf;
+  //     address caller;
+  //     for (uint256 i = 0; i < callInputs.length; i++) {
+  //       (asset, amount, onBehalfOf, ) = abi.decode(
+  //         callInputs[i].input,
+  //         (address, uint256, address, uint16)
+  //       );
+  //       caller = callInputs[i].caller;
+  //       totalDepositAmount += amount;
+  //       // Note in a realistic scenario we would also need to loop through all the potential assets
+  //       // that could be in a batch. For simplicity we omit this for now and only use one asset.
+  //     }
+  //     _checkDepositBalanceChange(asset, caller, onBehalfOf, totalDepositAmount);
+  //   }
+  // }
+
+  // function _checkDepositBalanceChange(
+  //   address asset,
+  //   address caller,
+  //   address onBehalfOf,
+  //   uint256 amount
+  // ) internal {
+  //   // Get reserve data
+  //   DataTypes.ReserveDataLegacy memory reserveData = pool.getReserveData(asset);
+
+  //   // Get aToken
+  //   IERC20 aToken = IERC20(reserveData.aTokenAddress);
+
+  //   // Get underlying token
+  //   IERC20 underlying = IERC20(asset);
+
+  //   // Get balances before
+  //   ph.forkPreState();
+  //   uint256 preSenderBalance = underlying.balanceOf(caller);
+  //   uint256 preATokenBalance = aToken.balanceOf(onBehalfOf);
+
+  //   // Get balances after
+  //   ph.forkPostState();
+  //   uint256 postSenderBalance = underlying.balanceOf(caller);
+  //   uint256 postATokenBalance = aToken.balanceOf(onBehalfOf);
+
+  //   // Check sender balance decreased by amount
+  //   require(
+  //     preSenderBalance - postSenderBalance == amount,
+  //     'Sender balance did not decrease by deposit amount'
+  //   );
+
+  //   // Check aToken balance increased by amount
+  //   require(
+  //     postATokenBalance - preATokenBalance == amount,
+  //     'AToken balance did not increase by deposit amount'
+  //   );
+  // }
+
+  function assertDepositBalanceChangesWithoutHelper() external {
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.supply.selector);
-    for (uint256 i = 0; i < callInputs.length; i++) {
+    // Should never happen, due to the trigger being registered for the function
+    if (callInputs.length == 0) {
+      return;
+    } else if (callInputs.length == 1) {
+      // Be specific for 1 input to save gas
       (address asset, uint256 amount, address onBehalfOf, ) = abi.decode(
-        callInputs[i].input,
+        callInputs[0].input,
         (address, uint256, address, uint16)
       );
-
-      // Get reserve data
+      address caller = callInputs[0].caller;
       DataTypes.ReserveDataLegacy memory reserveData = pool.getReserveData(asset);
 
       // Get aToken
-      IAToken aToken = IAToken(reserveData.aTokenAddress);
+      IERC20 aToken = IERC20(reserveData.aTokenAddress);
 
       // Get underlying token
       IERC20 underlying = IERC20(asset);
 
       // Get balances before
       ph.forkPreState();
-      uint256 preSenderBalance = underlying.balanceOf(callInputs[i].caller);
+      uint256 preSenderBalance = underlying.balanceOf(caller);
       uint256 preATokenBalance = aToken.balanceOf(onBehalfOf);
 
       // Get balances after
       ph.forkPostState();
-      uint256 postSenderBalance = underlying.balanceOf(callInputs[i].caller);
+      uint256 postSenderBalance = underlying.balanceOf(caller);
+      uint256 postATokenBalance = aToken.balanceOf(onBehalfOf);
+
+      // Check sender balance decreased by amount
+      require(
+        preSenderBalance - postSenderBalance == amount,
+        'Sender balance did not decrease by deposit amount'
+      );
+
+      // Check aToken balance increased by amount
+      require(
+        postATokenBalance - preATokenBalance == amount,
+        'AToken balance did not increase by deposit amount'
+      );
+    } else {
+      // Accumulate all deposit amounts and compare to deltas of sender balance and aToken balance
+      uint256 totalDepositAmount = 0;
+      address asset;
+      uint256 amount;
+      address onBehalfOf;
+      address caller;
+      for (uint256 i = 0; i < callInputs.length; i++) {
+        (asset, amount, onBehalfOf, ) = abi.decode(
+          callInputs[i].input,
+          (address, uint256, address, uint16)
+        );
+        caller = callInputs[i].caller;
+        totalDepositAmount += amount;
+        // Note in a realistic scenario we would also need to loop through all the potential assets
+        // that could be in a batch. For simplicity we omit this for now and only use one asset.
+      }
+      DataTypes.ReserveDataLegacy memory reserveData = pool.getReserveData(asset);
+
+      // Get aToken
+      IERC20 aToken = IERC20(reserveData.aTokenAddress);
+
+      // Get underlying token
+      IERC20 underlying = IERC20(asset);
+
+      // Get balances before
+      ph.forkPreState();
+      uint256 preSenderBalance = underlying.balanceOf(caller);
+      uint256 preATokenBalance = aToken.balanceOf(onBehalfOf);
+
+      // Get balances after
+      ph.forkPostState();
+      uint256 postSenderBalance = underlying.balanceOf(caller);
       uint256 postATokenBalance = aToken.balanceOf(onBehalfOf);
 
       // Check sender balance decreased by amount
