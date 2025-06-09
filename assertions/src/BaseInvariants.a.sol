@@ -98,7 +98,12 @@ contract BaseInvariants is Assertion {
     uint256 postDebt = variableDebtToken.totalSupply();
 
     // Calculate actual change
-    uint256 netChange = totalIncrease - totalDecrease;
+    uint256 netChange;
+    if (totalDecrease > totalIncrease) {
+      netChange = totalDecrease - totalIncrease;
+    } else {
+      netChange = totalIncrease - totalDecrease;
+    }
     uint256 actualChange = postDebt > preDebt ? postDebt - preDebt : preDebt - postDebt;
 
     // There's either a bug in the test or the code.

@@ -123,7 +123,11 @@ abstract contract Pool is VersionedInitializable, PoolStorage, IPool {
 
   // PHYLAX TESTING SPECIFIC OWNER FUNCTIONS
   function getOwner() public view returns (address) {
-    return ADDRESSES_PROVIDER.getACLManager();
+    return ADDRESSES_PROVIDER.getACLAdmin();
+  }
+
+  function owner() public view returns (address) {
+    return ADDRESSES_PROVIDER.getACLAdmin();
   }
 
   /// @inheritdoc IPool
