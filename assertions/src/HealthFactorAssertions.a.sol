@@ -4,21 +4,17 @@ pragma solidity ^0.8.13;
 import {Assertion} from 'credible-std/Assertion.sol';
 import {PhEvm} from 'credible-std/PhEvm.sol';
 import {IPool} from '../../src/contracts/interfaces/IPool.sol';
-import {DataTypes} from '../../src/contracts/protocol/libraries/types/DataTypes.sol';
-import {ValidationLogic} from '../../src/contracts/protocol/libraries/logic/ValidationLogic.sol';
 
 /// @title HealthFactorAssertions
 /// @notice Implements the health factor invariants defined in HFPostconditionsSpec.t.sol
 /// @dev Each assertion function implements one or more invariants from HFPostconditionsSpec
+/// @dev Uses pool's getUserAccountData which is expensive and causes gas limit issues
 contract HealthFactorAssertions is Assertion {
   IPool public immutable pool;
 
   // Constants from ValidationLogic
   uint256 constant HEALTH_FACTOR_LIQUIDATION_THRESHOLD = 1e18;
   uint256 constant MINIMUM_HEALTH_FACTOR_LIQUIDATION_THRESHOLD = 0.95e18;
-
-  // Track affected users for actor isolation checks
-  mapping(address => bool) private affectedUsers;
 
   constructor(IPool _pool) {
     pool = _pool;
@@ -42,11 +38,6 @@ contract HealthFactorAssertions is Assertion {
     registerCallTrigger(this.assertNonDecreasingHfActions.selector, pool.repay.selector);
     registerCallTrigger(this.assertNonIncreasingHfActions.selector, pool.borrow.selector);
     registerCallTrigger(this.assertNonIncreasingHfActions.selector, pool.withdraw.selector);
-    registerCallTrigger(this.assertActorIsolation.selector, pool.supply.selector);
-    registerCallTrigger(this.assertActorIsolation.selector, pool.borrow.selector);
-    registerCallTrigger(this.assertActorIsolation.selector, pool.withdraw.selector);
-    registerCallTrigger(this.assertActorIsolation.selector, pool.repay.selector);
-    registerCallTrigger(this.assertActorIsolation.selector, pool.liquidationCall.selector);
   }
 
   ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -62,12 +53,14 @@ contract HealthFactorAssertions is Assertion {
         (address, uint256, address, uint16)
       );
 
-      // Get health factor before and after
+      // Get health factor before and after using expensive getUserAccountData
       ph.forkPreState();
-      (, , , , , uint256 preHealthFactor) = pool.getUserAccountData(onBehalfOf);
+      uint256 preHealthFactor;
+      (, , , , , preHealthFactor) = pool.getUserAccountData(onBehalfOf);
 
       ph.forkPostState();
-      (, , , , , uint256 postHealthFactor) = pool.getUserAccountData(onBehalfOf);
+      uint256 postHealthFactor;
+      (, , , , , postHealthFactor) = pool.getUserAccountData(onBehalfOf);
 
       // For non-decreasing actions, health factor should not decrease
       require(
@@ -86,12 +79,14 @@ contract HealthFactorAssertions is Assertion {
         (address, uint256, uint256, uint16, address)
       );
 
-      // Get health factor before and after
+      // Get health factor before and after using expensive getUserAccountData
       ph.forkPreState();
-      (, , , , , uint256 preHealthFactor) = pool.getUserAccountData(onBehalfOf);
+      uint256 preHealthFactor;
+      (, , , , , preHealthFactor) = pool.getUserAccountData(onBehalfOf);
 
       ph.forkPostState();
-      (, , , , , uint256 postHealthFactor) = pool.getUserAccountData(onBehalfOf);
+      uint256 postHealthFactor;
+      (, , , , , postHealthFactor) = pool.getUserAccountData(onBehalfOf);
 
       // For non-increasing actions, health factor should not increase
       require(
@@ -110,12 +105,14 @@ contract HealthFactorAssertions is Assertion {
         (address, uint256, uint256, uint16, address)
       );
 
-      // Get health factor before and after
+      // Get health factor before and after using expensive getUserAccountData
       ph.forkPreState();
-      (, , , , , uint256 preHealthFactor) = pool.getUserAccountData(onBehalfOf);
+      uint256 preHealthFactor;
+      (, , , , , preHealthFactor) = pool.getUserAccountData(onBehalfOf);
 
       ph.forkPostState();
-      (, , , , , uint256 postHealthFactor) = pool.getUserAccountData(onBehalfOf);
+      uint256 postHealthFactor;
+      (, , , , , postHealthFactor) = pool.getUserAccountData(onBehalfOf);
 
       // If account was healthy before, it should remain healthy after
       if (preHealthFactor >= HEALTH_FACTOR_LIQUIDATION_THRESHOLD) {
@@ -136,9 +133,10 @@ contract HealthFactorAssertions is Assertion {
         (address, uint256, uint256, uint16, address)
       );
 
-      // Get health factor after action
+      // Get health factor after action using expensive getUserAccountData
       ph.forkPostState();
-      (, , , , , uint256 postHealthFactor) = pool.getUserAccountData(onBehalfOf);
+      uint256 postHealthFactor;
+      (, , , , , postHealthFactor) = pool.getUserAccountData(onBehalfOf);
 
       // If health factor is unsafe after action, verify it's a valid unsafe action
       if (postHealthFactor < HEALTH_FACTOR_LIQUIDATION_THRESHOLD) {
@@ -164,9 +162,10 @@ contract HealthFactorAssertions is Assertion {
         (address, address, address, uint256, bool)
       );
 
-      // Get health factor before action
+      // Get health factor before action using expensive getUserAccountData
       ph.forkPreState();
-      (, , , , , uint256 preHealthFactor) = pool.getUserAccountData(user);
+      uint256 preHealthFactor;
+      (, , , , , preHealthFactor) = pool.getUserAccountData(user);
 
       // If health factor is unsafe before action, verify it's a valid unsafe action
       if (preHealthFactor < HEALTH_FACTOR_LIQUIDATION_THRESHOLD) {
@@ -176,38 +175,6 @@ contract HealthFactorAssertions is Assertion {
           currentSelector == pool.liquidationCall.selector,
           'Action on unsafe position not allowed'
         );
-      }
-    }
-  }
-
-  /// @notice Implements HF_GPOST_F: Changes to an actor Health Factor must not affect the HF of any non-targeted actors
-  function assertActorIsolation() external {
-    // Clear affected users tracking by setting all to false
-    address[] memory allUsers = _getAllUsersWithPositions();
-    for (uint256 i = 0; i < allUsers.length; i++) {
-      affectedUsers[allUsers[i]] = false;
-    }
-
-    // Track all users affected by the transaction
-    PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.supply.selector);
-    for (uint256 i = 0; i < callInputs.length; i++) {
-      (, , address onBehalfOf, ) = abi.decode(
-        callInputs[i].input,
-        (address, uint256, address, uint16)
-      );
-      affectedUsers[onBehalfOf] = true;
-    }
-
-    // Check that non-targeted users' health factors haven't changed
-    for (uint256 i = 0; i < allUsers.length; i++) {
-      if (!affectedUsers[allUsers[i]]) {
-        ph.forkPreState();
-        (, , , , , uint256 preHealthFactor) = pool.getUserAccountData(allUsers[i]);
-
-        ph.forkPostState();
-        (, , , , , uint256 postHealthFactor) = pool.getUserAccountData(allUsers[i]);
-
-        require(preHealthFactor == postHealthFactor, 'Non-targeted user health factor changed');
       }
     }
   }
@@ -226,8 +193,9 @@ contract HealthFactorAssertions is Assertion {
         (address, uint256, address, uint16)
       );
 
-      // Get health factor after supply
-      (, , , , , uint256 healthFactor) = pool.getUserAccountData(onBehalfOf);
+      // Get health factor after supply using expensive getUserAccountData
+      uint256 healthFactor;
+      (, , , , , healthFactor) = pool.getUserAccountData(onBehalfOf);
 
       require(
         healthFactor >= HEALTH_FACTOR_LIQUIDATION_THRESHOLD,
@@ -246,8 +214,9 @@ contract HealthFactorAssertions is Assertion {
         (address, uint256, uint256, uint16, address)
       );
 
-      // Get health factor after borrow
-      (, , , , , uint256 healthFactor) = pool.getUserAccountData(onBehalfOf);
+      // Get health factor after borrow using expensive getUserAccountData
+      uint256 healthFactor;
+      (, , , , , healthFactor) = pool.getUserAccountData(onBehalfOf);
 
       require(
         healthFactor >= HEALTH_FACTOR_LIQUIDATION_THRESHOLD,
@@ -261,8 +230,9 @@ contract HealthFactorAssertions is Assertion {
   function assertWithdrawNonIncreasingHf() external {
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.withdraw.selector);
     for (uint256 i = 0; i < callInputs.length; i++) {
-      // Get health factor after withdraw
-      (, , , , , uint256 healthFactor) = pool.getUserAccountData(callInputs[i].caller);
+      // Get health factor after withdraw using expensive getUserAccountData
+      uint256 healthFactor;
+      (, , , , , healthFactor) = pool.getUserAccountData(callInputs[i].caller);
 
       require(
         healthFactor >= HEALTH_FACTOR_LIQUIDATION_THRESHOLD,
@@ -281,8 +251,9 @@ contract HealthFactorAssertions is Assertion {
         (address, uint256, uint256, address)
       );
 
-      // Get health factor after repay
-      (, , , , , uint256 healthFactor) = pool.getUserAccountData(onBehalfOf);
+      // Get health factor after repay using expensive getUserAccountData
+      uint256 healthFactor;
+      (, , , , , healthFactor) = pool.getUserAccountData(onBehalfOf);
 
       require(
         healthFactor >= HEALTH_FACTOR_LIQUIDATION_THRESHOLD,
@@ -304,16 +275,19 @@ contract HealthFactorAssertions is Assertion {
         (address, address, address, uint256, bool)
       );
 
-      // Get health factor before liquidation
-      (, , , , , uint256 preHealthFactor) = pool.getUserAccountData(user);
+      // Get health factor before liquidation using expensive getUserAccountData
+      uint256 preHealthFactor;
+      (, , , , , preHealthFactor) = pool.getUserAccountData(user);
 
       require(
         preHealthFactor < HEALTH_FACTOR_LIQUIDATION_THRESHOLD,
         'Cannot liquidate healthy position'
       );
 
-      // Get health factor after liquidation
-      (, , , , , uint256 postHealthFactor) = pool.getUserAccountData(user);
+      // Get health factor after liquidation using expensive getUserAccountData
+      ph.forkPostState();
+      uint256 postHealthFactor;
+      (, , , , , postHealthFactor) = pool.getUserAccountData(user);
 
       // Ensure liquidation improves health factor
       require(postHealthFactor > preHealthFactor, 'Liquidation did not improve health factor');
@@ -334,8 +308,9 @@ contract HealthFactorAssertions is Assertion {
     for (uint256 i = 0; i < callInputs.length; i++) {
       (, bool useAsCollateral) = abi.decode(callInputs[i].input, (address, bool));
 
-      // Get health factor after setting collateral
-      (, , , , , uint256 healthFactor) = pool.getUserAccountData(callInputs[i].caller);
+      // Get health factor after setting collateral using expensive getUserAccountData
+      uint256 healthFactor;
+      (, , , , , healthFactor) = pool.getUserAccountData(callInputs[i].caller);
 
       // If disabling collateral, ensure position remains healthy
       if (!useAsCollateral) {
@@ -345,14 +320,5 @@ contract HealthFactorAssertions is Assertion {
         );
       }
     }
-  }
-
-  // Helper function to get all users with positions
-  // This is just placeholder implementation as no such function exists, and probably never will
-  // We just use this for the sake of the example
-  function _getAllUsersWithPositions() internal view returns (address[] memory) {
-    // This would need to be implemented based on how Aave tracks users
-    // For now, we'll return an empty array as this is a placeholder
-    return new address[](0);
   }
 }
