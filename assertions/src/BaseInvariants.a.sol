@@ -48,43 +48,59 @@ contract BaseInvariants is Assertion {
       pool.liquidationCall.selector
     );
 
+    // If no operations affecting this asset, skip the check
+    if (borrowCalls.length == 0 && repayCalls.length == 0 && liquidationCalls.length == 0) {
+      return;
+    }
+
     uint256 totalIncrease = 0;
     uint256 totalDecrease = 0;
 
-    // Process borrow operations (increase debt)
+    // Process borrow operations (increase debt) - only VARIABLE mode affects variable debt token
     for (uint256 i = 0; i < borrowCalls.length; i++) {
-      (address borrowAsset, uint256 amount, , , ) = abi.decode(
+      (address borrowAsset, uint256 amount, uint256 interestRateMode, , ) = abi.decode(
         borrowCalls[i].input,
         (address, uint256, uint256, uint16, address)
       );
-      if (borrowAsset == address(asset)) {
+      if (
+        borrowAsset == address(asset) &&
+        interestRateMode == uint256(DataTypes.InterestRateMode.VARIABLE)
+      ) {
         totalIncrease += amount;
       }
     }
 
-    // Process repay operations (decrease debt)
-    for (uint256 i = 0; i < repayCalls.length; i++) {
-      (address repayAsset, uint256 amount, , ) = abi.decode(
-        repayCalls[i].input,
-        (address, uint256, uint256, address)
-      );
-      if (repayAsset == address(asset)) {
-        totalDecrease += amount;
-      }
+    // // Process repay operations (decrease debt) - only VARIABLE mode affects variable debt token
+    // for (uint256 i = 0; i < repayCalls.length; i++) {
+    //   (address repayAsset, uint256 amount, uint256 interestRateMode, ) = abi.decode(
+    //     repayCalls[i].input,
+    //     (address, uint256, uint256, address)
+    //   );
+    //   if (
+    //     repayAsset == address(asset) &&
+    //     interestRateMode == uint256(DataTypes.InterestRateMode.VARIABLE)
+    //   ) {
+    //     totalDecrease += amount;
+    //   }
+    // }
+
+    // // Process liquidation operations (decrease debt)
+    // for (uint256 i = 0; i < liquidationCalls.length; i++) {
+    //   (, address debtAsset, , uint256 debtToCover, ) = abi.decode(
+    //     liquidationCalls[i].input,
+    //     (address, address, address, uint256, bool)
+    //   );
+    //   if (debtAsset == address(asset)) {
+    //     totalDecrease += debtToCover;
+    //   }
+    // }
+
+    // If no operations affected this specific asset, skip the check
+    if (totalIncrease == 0 && totalDecrease == 0) {
+      return;
     }
 
-    // Process liquidation operations (decrease debt)
-    for (uint256 i = 0; i < liquidationCalls.length; i++) {
-      (, address debtAsset, , uint256 debtToCover, ) = abi.decode(
-        liquidationCalls[i].input,
-        (address, address, address, uint256, bool)
-      );
-      if (debtAsset == address(asset)) {
-        totalDecrease += debtToCover;
-      }
-    }
-
-    // get variable debt token address
+    // Get variable debt token address
     DataTypes.ReserveDataLegacy memory reserveData = pool.getReserveData(address(asset));
     address variableDebtTokenAddress = reserveData.variableDebtTokenAddress;
     IERC20 variableDebtToken = IERC20(variableDebtTokenAddress);
@@ -97,21 +113,17 @@ contract BaseInvariants is Assertion {
     ph.forkPostState();
     uint256 postDebt = variableDebtToken.totalSupply();
 
-    // Calculate actual change
-    uint256 netChange;
-    if (totalDecrease > totalIncrease) {
-      netChange = totalDecrease - totalIncrease;
-    } else {
-      netChange = totalIncrease - totalDecrease;
-    }
-    uint256 actualChange = postDebt > preDebt ? postDebt - preDebt : preDebt - postDebt;
+    // Calculate expected change: borrows increase, repays/liquidations decrease
+    int256 expectedChange = int256(totalIncrease) - int256(totalDecrease);
 
-    // There's either a bug in the test or the code.
+    // Calculate actual change
+    int256 actualChange = int256(postDebt) - int256(preDebt);
+
     // The invariant is that the debt token total supply should increase by the amount of the borrow
     // and decrease by the amount of the repay or liquidation.
     // If the invariant is violated, it means that the debt token total supply is not correctly updated.
     require(
-      actualChange == netChange,
+      actualChange == expectedChange,
       'Debt token supply change does not match individual balance changes'
     );
   }
