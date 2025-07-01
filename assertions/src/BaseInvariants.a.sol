@@ -70,30 +70,30 @@ contract BaseInvariants is Assertion {
       }
     }
 
-    // // Process repay operations (decrease debt) - only VARIABLE mode affects variable debt token
-    // for (uint256 i = 0; i < repayCalls.length; i++) {
-    //   (address repayAsset, uint256 amount, uint256 interestRateMode, ) = abi.decode(
-    //     repayCalls[i].input,
-    //     (address, uint256, uint256, address)
-    //   );
-    //   if (
-    //     repayAsset == address(asset) &&
-    //     interestRateMode == uint256(DataTypes.InterestRateMode.VARIABLE)
-    //   ) {
-    //     totalDecrease += amount;
-    //   }
-    // }
+    // Process repay operations (decrease debt) - only VARIABLE mode affects variable debt token
+    for (uint256 i = 0; i < repayCalls.length; i++) {
+      (address repayAsset, uint256 amount, uint256 interestRateMode, ) = abi.decode(
+        repayCalls[i].input,
+        (address, uint256, uint256, address)
+      );
+      if (
+        repayAsset == address(asset) &&
+        interestRateMode == uint256(DataTypes.InterestRateMode.VARIABLE)
+      ) {
+        totalDecrease += amount;
+      }
+    }
 
-    // // Process liquidation operations (decrease debt)
-    // for (uint256 i = 0; i < liquidationCalls.length; i++) {
-    //   (, address debtAsset, , uint256 debtToCover, ) = abi.decode(
-    //     liquidationCalls[i].input,
-    //     (address, address, address, uint256, bool)
-    //   );
-    //   if (debtAsset == address(asset)) {
-    //     totalDecrease += debtToCover;
-    //   }
-    // }
+    // Process liquidation operations (decrease debt)
+    for (uint256 i = 0; i < liquidationCalls.length; i++) {
+      (, address debtAsset, , uint256 debtToCover, ) = abi.decode(
+        liquidationCalls[i].input,
+        (address, address, address, uint256, bool)
+      );
+      if (debtAsset == address(asset)) {
+        totalDecrease += debtToCover;
+      }
+    }
 
     // If no operations affected this specific asset, skip the check
     if (totalIncrease == 0 && totalDecrease == 0) {
