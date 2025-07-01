@@ -15,7 +15,7 @@ pragma solidity ^0.8.13;
 import {Test} from 'forge-std/Test.sol';
 import {CredibleTest} from 'credible-std/CredibleTest.sol';
 import {FlashloanPostConditionAssertions} from '../src/FlashloanInvariantAssertions.a.sol';
-import {IMockPool} from '../src/IMockPool.sol';
+import {IMockL2Pool} from '../src/IMockL2Pool.sol';
 import {DataTypes} from '../../src/contracts/protocol/libraries/types/DataTypes.sol';
 import {IERC20} from '../../src/contracts/dependencies/openzeppelin/contracts/IERC20.sol';
 import {TestnetProcedures} from '../../tests/utils/TestnetProcedures.sol';
@@ -26,7 +26,7 @@ import {IPoolAddressesProvider} from '../../src/contracts/interfaces/IPoolAddres
 import {ReserveConfiguration} from '../../src/contracts/protocol/pool/PoolConfigurator.sol';
 
 contract TestFlashloanInvariantAssertions is CredibleTest, Test, TestnetProcedures {
-  IMockPool public pool;
+  IMockL2Pool public pool;
   FlashloanPostConditionAssertions public assertions;
   address public user;
   address public asset;
@@ -38,8 +38,8 @@ contract TestFlashloanInvariantAssertions is CredibleTest, Test, TestnetProcedur
   using ReserveConfiguration for DataTypes.ReserveConfigurationMap;
 
   function setUp() public {
-    // Initialize test environment with real contracts
-    initTestEnvironment();
+    // Initialize test environment with real contracts (L2 enabled for L2Encoder)
+    initL2TestEnvironment();
 
     asset = tokenList.usdx;
     // Supply tokens to the pool first, like in the original test
@@ -62,7 +62,7 @@ contract TestFlashloanInvariantAssertions is CredibleTest, Test, TestnetProcedur
       ASSERTION_LABEL,
       address(contracts.poolProxy),
       type(FlashloanPostConditionAssertions).creationCode,
-      abi.encode(contracts.poolProxy)
+      abi.encode(IMockL2Pool(address(contracts.poolProxy)))
     );
 
     // Transfer ownership of the token to the mock receiver

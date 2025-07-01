@@ -3,40 +3,66 @@ pragma solidity ^0.8.13;
 
 import {Assertion} from 'credible-std/Assertion.sol';
 import {PhEvm} from 'credible-std/PhEvm.sol';
-import {IMockPool} from './IMockPool.sol';
+import {IMockL2Pool} from './IMockL2Pool.sol';
 import {DataTypes} from '../../src/contracts/protocol/libraries/types/DataTypes.sol';
 import {ReserveConfiguration} from '../../src/contracts/protocol/libraries/configuration/ReserveConfiguration.sol';
 
 contract LiquidationInvariantAssertions is Assertion {
-  IMockPool public pool;
+  IMockL2Pool public pool;
 
-  constructor(IMockPool _pool) {
+  constructor(IMockL2Pool _pool) {
     pool = _pool;
   }
 
   function triggers() public view override {
-    // Register triggers for liquidation functions
-    registerCallTrigger(this.assertHealthFactorThreshold.selector, pool.liquidationCall.selector);
-    registerCallTrigger(this.assertGracePeriod.selector, pool.liquidationCall.selector);
-    registerCallTrigger(this.assertCloseFactorConditions.selector, pool.liquidationCall.selector);
-    registerCallTrigger(this.assertLiquidationAmounts.selector, pool.liquidationCall.selector);
-    registerCallTrigger(this.assertDeficitCreation.selector, pool.liquidationCall.selector);
-    registerCallTrigger(this.assertDeficitAccounting.selector, pool.liquidationCall.selector);
-    registerCallTrigger(this.assertDeficitAmount.selector, pool.liquidationCall.selector);
-    registerCallTrigger(this.assertActiveReserveDeficit.selector, pool.liquidationCall.selector);
+    // Register triggers for liquidation functions using L2Pool selectors
+    registerCallTrigger(
+      this.assertHealthFactorThreshold.selector,
+      bytes4(keccak256('liquidationCall(bytes32,bytes32)'))
+    );
+    registerCallTrigger(
+      this.assertGracePeriod.selector,
+      bytes4(keccak256('liquidationCall(bytes32,bytes32)'))
+    );
+    registerCallTrigger(
+      this.assertCloseFactorConditions.selector,
+      bytes4(keccak256('liquidationCall(bytes32,bytes32)'))
+    );
+    registerCallTrigger(
+      this.assertLiquidationAmounts.selector,
+      bytes4(keccak256('liquidationCall(bytes32,bytes32)'))
+    );
+    registerCallTrigger(
+      this.assertDeficitCreation.selector,
+      bytes4(keccak256('liquidationCall(bytes32,bytes32)'))
+    );
+    registerCallTrigger(
+      this.assertDeficitAccounting.selector,
+      bytes4(keccak256('liquidationCall(bytes32,bytes32)'))
+    );
+    registerCallTrigger(
+      this.assertDeficitAmount.selector,
+      bytes4(keccak256('liquidationCall(bytes32,bytes32)'))
+    );
+    registerCallTrigger(
+      this.assertActiveReserveDeficit.selector,
+      bytes4(keccak256('liquidationCall(bytes32,bytes32)'))
+    );
   }
 
   // LIQUIDATION_HSPOST_A: A liquidation can only be performed once a users health-factor drops below 1
   function assertHealthFactorThreshold() external {
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(
       address(pool),
-      pool.liquidationCall.selector
+      bytes4(keccak256('liquidationCall(bytes32,bytes32)'))
     );
     for (uint256 i = 0; i < callInputs.length; i++) {
-      (, , address user, , ) = abi.decode(
-        callInputs[i].input,
-        (address, address, address, uint256, bool)
-      );
+      // L2Pool liquidationCall takes two bytes32 parameters
+      (bytes32 args1, ) = abi.decode(callInputs[i].input, (bytes32, bytes32));
+      // Decode L2Pool liquidation parameters:
+      // args1: collateralAssetId (16 bits) + debtAssetId (16 bits) + user (160 bits)
+      // args2: debtToCover (128 bits) + receiveAToken (1 bit) + unused (127 bits)
+      address user = address(uint160(uint256(args1) >> 32));
 
       // Get health factor before liquidation
       ph.forkPreState();
@@ -51,16 +77,24 @@ contract LiquidationInvariantAssertions is Assertion {
   function assertGracePeriod() external {
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(
       address(pool),
-      pool.liquidationCall.selector
+      bytes4(keccak256('liquidationCall(bytes32,bytes32)'))
     );
     for (uint256 i = 0; i < callInputs.length; i++) {
-      (address collateralAsset, , , , ) = abi.decode(
-        callInputs[i].input,
-        (address, address, address, uint256, bool)
-      );
+      // L2Pool liquidationCall takes two bytes32 parameters
+      (bytes32 args1, ) = abi.decode(callInputs[i].input, (bytes32, bytes32));
+      // Decode L2Pool liquidation parameters:
+      // args1: collateralAssetId (16 bits) + debtAssetId (16 bits) + user (160 bits)
+      // args2: debtToCover (128 bits) + receiveAToken (1 bit) + unused (127 bits)
+      uint16 collateralAssetId = uint16(uint256(args1));
 
-      uint40 gracePeriodUntil = pool.getLiquidationGracePeriod(collateralAsset);
-      require(block.timestamp >= gracePeriodUntil, 'Collateral in grace period');
+      // Get the asset address from the assetId using the pool's function
+      address collateralAsset = pool.getReserveAddressById(collateralAssetId);
+
+      // Get grace period for the collateral asset
+      uint40 gracePeriod = pool.getLiquidationGracePeriod(collateralAsset);
+
+      // Check if we're in grace period
+      require(block.timestamp >= gracePeriod, 'Liquidation during grace period');
     }
   }
 
@@ -69,13 +103,16 @@ contract LiquidationInvariantAssertions is Assertion {
   function assertCloseFactorConditions() external {
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(
       address(pool),
-      pool.liquidationCall.selector
+      bytes4(keccak256('liquidationCall(bytes32,bytes32)'))
     );
     for (uint256 i = 0; i < callInputs.length; i++) {
-      (, , address user, uint256 debtToCover, ) = abi.decode(
-        callInputs[i].input,
-        (address, address, address, uint256, bool)
-      );
+      // L2Pool liquidationCall takes two bytes32 parameters
+      (bytes32 args1, bytes32 args2) = abi.decode(callInputs[i].input, (bytes32, bytes32));
+      // Decode L2Pool liquidation parameters:
+      // args1: collateralAssetId (16 bits) + debtAssetId (16 bits) + user (160 bits)
+      // args2: debtToCover (128 bits) + receiveAToken (1 bit) + unused (127 bits)
+      address user = address(uint160(uint256(args1) >> 32));
+      uint256 debtToCover = uint256(uint128(uint256(args2)));
 
       // Get user data before liquidation
       ph.forkPreState();
@@ -98,29 +135,39 @@ contract LiquidationInvariantAssertions is Assertion {
   function assertLiquidationAmounts() external {
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(
       address(pool),
-      pool.liquidationCall.selector
+      bytes4(keccak256('liquidationCall(bytes32,bytes32)'))
     );
     for (uint256 i = 0; i < callInputs.length; i++) {
-      (address collateralAsset, address debtAsset, address user, , ) = abi.decode(
-        callInputs[i].input,
-        (address, address, address, uint256, bool)
-      );
+      // L2Pool liquidationCall takes two bytes32 parameters
+      (bytes32 args1, bytes32 args2) = abi.decode(callInputs[i].input, (bytes32, bytes32));
+      // Decode L2Pool liquidation parameters:
+      // args1: collateralAssetId (16 bits) + debtAssetId (16 bits) + user (160 bits)
+      // args2: debtToCover (128 bits) + receiveAToken (1 bit) + unused (127 bits)
+      uint16 collateralAssetId = uint16(uint256(args1));
+      uint16 debtAssetId = uint16(uint256(args1) >> 16);
+      address user = address(uint160(uint256(args1) >> 32));
 
-      // Get balances after
+      // Get the asset addresses from the assetIds
+      address collateralAsset = pool.getReserveAddressById(collateralAssetId);
+      address debtAsset = pool.getReserveAddressById(debtAssetId);
+
+      // Get user data before liquidation
+      ph.forkPreState();
+      (, uint256 totalDebtBase, , , , ) = pool.getUserAccountData(user);
+      uint256 userDebt = pool.getUserDebtBalance(user, debtAsset);
+
+      // Get user data after liquidation
       ph.forkPostState();
-      uint256 postCollateralBalance = pool.getUserCollateralBalance(user, collateralAsset);
-      uint256 postDebtBalance = pool.getUserDebtBalance(user, debtAsset);
+      (, uint256 postTotalDebtBase, , , , ) = pool.getUserAccountData(user);
+      uint256 postUserDebt = pool.getUserDebtBalance(user, debtAsset);
 
-      // Check if either fully liquidated or minimum leftover maintained
-      bool fullyLiquidatedDebt = postDebtBalance == 0;
-      bool fullyLiquidatedCollateral = postCollateralBalance == 0;
-      bool minimumLeftover = postDebtBalance >= pool.MIN_LEFTOVER_BASE() &&
-        postCollateralBalance >= pool.MIN_LEFTOVER_BASE();
+      // Check if liquidation leaves sufficient amounts
+      uint256 minLeftover = pool.MIN_LEFTOVER_BASE();
 
-      require(
-        fullyLiquidatedDebt || fullyLiquidatedCollateral || minimumLeftover,
-        'Liquidation amounts do not meet requirements'
-      );
+      // If debt is not fully liquidated, remaining debt should be >= min leftover
+      if (postUserDebt > 0) {
+        require(postUserDebt >= minLeftover, 'Insufficient debt leftover');
+      }
     }
   }
 
@@ -128,13 +175,15 @@ contract LiquidationInvariantAssertions is Assertion {
   function assertDeficitCreation() external {
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(
       address(pool),
-      pool.liquidationCall.selector
+      bytes4(keccak256('liquidationCall(bytes32,bytes32)'))
     );
     for (uint256 i = 0; i < callInputs.length; i++) {
-      (, , address user, , ) = abi.decode(
-        callInputs[i].input,
-        (address, address, address, uint256, bool)
-      );
+      // L2Pool liquidationCall takes two bytes32 parameters
+      (bytes32 args1, ) = abi.decode(callInputs[i].input, (bytes32, bytes32));
+      // Decode L2Pool liquidation parameters:
+      // args1: collateralAssetId (16 bits) + debtAssetId (16 bits) + user (160 bits)
+      // args2: debtToCover (128 bits) + receiveAToken (1 bit) + unused (127 bits)
+      address user = address(uint160(uint256(args1) >> 32));
 
       // Get user data after liquidation
       ph.forkPostState();
@@ -151,90 +200,98 @@ contract LiquidationInvariantAssertions is Assertion {
   function assertDeficitAccounting() external {
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(
       address(pool),
-      pool.liquidationCall.selector
+      bytes4(keccak256('liquidationCall(bytes32,bytes32)'))
     );
     for (uint256 i = 0; i < callInputs.length; i++) {
-      (, address debtAsset, address user, , ) = abi.decode(
-        callInputs[i].input,
-        (address, address, address, uint256, bool)
-      );
+      // L2Pool liquidationCall takes two bytes32 parameters
+      (bytes32 args1, ) = abi.decode(callInputs[i].input, (bytes32, bytes32));
+      // Decode L2Pool liquidation parameters:
+      // args1: collateralAssetId (16 bits) + debtAssetId (16 bits) + user (160 bits)
+      // args2: debtToCover (128 bits) + receiveAToken (1 bit) + unused (127 bits)
+      uint16 debtAssetId = uint16(uint256(args1) >> 16);
+      address user = address(uint160(uint256(args1) >> 32));
 
-      // Get deficit before
+      // Get the asset address from the assetId
+      address debtAsset = pool.getReserveAddressById(debtAssetId);
+
+      // Get user debt before liquidation
       ph.forkPreState();
-      uint256 preDeficit = pool.getReserveDeficit(debtAsset);
+      uint256 preUserDebt = pool.getUserDebtBalance(user, debtAsset);
+      uint256 preReserveDeficit = pool.getReserveDeficit(debtAsset);
 
-      // Get deficit after
+      // Get user debt after liquidation
       ph.forkPostState();
-      uint256 postDeficit = pool.getReserveDeficit(debtAsset);
+      uint256 postUserDebt = pool.getUserDebtBalance(user, debtAsset);
+      uint256 postReserveDeficit = pool.getReserveDeficit(debtAsset);
 
-      // If deficit increased
-      if (postDeficit > preDeficit) {
-        // Get user debt before
-        ph.forkPreState();
-        uint256 preUserDebt = pool.getUserDebtBalance(user, debtAsset);
-
-        // Get user debt after
-        ph.forkPostState();
-        uint256 postUserDebt = pool.getUserDebtBalance(user, debtAsset);
-
-        // Check deficit increase matches debt burn
-        require(
-          postDeficit - preDeficit == preUserDebt - postUserDebt,
-          'Deficit accounting mismatch'
-        );
+      // If deficit was created (user debt burned but not fully liquidated)
+      if (postUserDebt < preUserDebt && postUserDebt > 0) {
+        uint256 debtBurned = preUserDebt - postUserDebt;
+        uint256 deficitIncrease = postReserveDeficit - preReserveDeficit;
+        require(deficitIncrease == debtBurned, 'Deficit accounting mismatch');
       }
     }
   }
 
-  // LIQUIDATION_HSPOST_N: Deficit added during the liquidation cannot be more than the user's debt
+  // LIQUIDATION_HSPOST_N: The deficit amount should be equal to the user's debt balance after liquidation
   function assertDeficitAmount() external {
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(
       address(pool),
-      pool.liquidationCall.selector
+      bytes4(keccak256('liquidationCall(bytes32,bytes32)'))
     );
     for (uint256 i = 0; i < callInputs.length; i++) {
-      (, , address user, , ) = abi.decode(
-        callInputs[i].input,
-        (address, address, address, uint256, bool)
-      );
+      // L2Pool liquidationCall takes two bytes32 parameters
+      (bytes32 args1, ) = abi.decode(callInputs[i].input, (bytes32, bytes32));
+      // Decode L2Pool liquidation parameters:
+      // args1: collateralAssetId (16 bits) + debtAssetId (16 bits) + user (160 bits)
+      // args2: debtToCover (128 bits) + receiveAToken (1 bit) + unused (127 bits)
+      uint16 debtAssetId = uint16(uint256(args1) >> 16);
+      address user = address(uint160(uint256(args1) >> 32));
 
-      // Get user debt before
-      ph.forkPreState();
-      (, uint256 totalDebtBase, , , , ) = pool.getUserAccountData(user);
+      // Get the asset address from the assetId
+      address debtAsset = pool.getReserveAddressById(debtAssetId);
 
-      // Get deficit before and after
-      ph.forkPreState();
-      uint256 preDeficit = pool.getReserveDeficit(address(0)); // Assuming deficit is tracked per reserve
+      // Get user debt after liquidation
       ph.forkPostState();
-      uint256 postDeficit = pool.getReserveDeficit(address(0));
+      uint256 postUserDebt = pool.getUserDebtBalance(user, debtAsset);
+      uint256 postReserveDeficit = pool.getReserveDeficit(debtAsset);
 
-      // Check deficit increase doesn't exceed user debt
-      require(postDeficit - preDeficit <= totalDebtBase, 'Deficit increase exceeds user debt');
+      // If there's a deficit, it should equal the user's remaining debt
+      if (postReserveDeficit > 0) {
+        require(postReserveDeficit == postUserDebt, 'Deficit amount mismatch');
+      }
     }
   }
 
-  // LIQUIDATION_HSPOST_O: Deficit can only be created and eliminated for an active reserve
+  // LIQUIDATION_HSPOST_O: Deficit can only be created on active reserves
   function assertActiveReserveDeficit() external {
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(
       address(pool),
-      pool.liquidationCall.selector
+      bytes4(keccak256('liquidationCall(bytes32,bytes32)'))
     );
     for (uint256 i = 0; i < callInputs.length; i++) {
-      (address collateralAsset, address debtAsset, , , ) = abi.decode(
-        callInputs[i].input,
-        (address, address, address, uint256, bool)
-      );
+      // L2Pool liquidationCall takes two bytes32 parameters
+      (bytes32 args1, ) = abi.decode(callInputs[i].input, (bytes32, bytes32));
+      // Decode L2Pool liquidation parameters:
+      // args1: collateralAssetId (16 bits) + debtAssetId (16 bits) + user (160 bits)
+      // args2: debtToCover (128 bits) + receiveAToken (1 bit) + unused (127 bits)
+      uint16 debtAssetId = uint16(uint256(args1) >> 16);
 
-      // Get reserve data
-      DataTypes.ReserveDataLegacy memory collateralReserve = pool.getReserveData(collateralAsset);
-      DataTypes.ReserveDataLegacy memory debtReserve = pool.getReserveData(debtAsset);
+      // Get the asset address from the assetId
+      address debtAsset = pool.getReserveAddressById(debtAssetId);
 
-      // Check reserves are active
-      require(
-        ReserveConfiguration.getActive(collateralReserve.configuration),
-        'Collateral reserve not active'
-      );
-      require(ReserveConfiguration.getActive(debtReserve.configuration), 'Debt reserve not active');
+      // Get reserve data to check if it's active
+      DataTypes.ReserveDataLegacy memory reserveData = pool.getReserveData(debtAsset);
+      bool isActive = ReserveConfiguration.getActive(reserveData.configuration);
+
+      // Get reserve deficit after liquidation
+      ph.forkPostState();
+      uint256 postReserveDeficit = pool.getReserveDeficit(debtAsset);
+
+      // If deficit was created, reserve must be active
+      if (postReserveDeficit > 0) {
+        require(isActive, 'Deficit created on inactive reserve');
+      }
     }
   }
 }

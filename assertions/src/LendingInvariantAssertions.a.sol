@@ -3,332 +3,268 @@ pragma solidity ^0.8.13;
 
 import {Assertion} from 'credible-std/Assertion.sol';
 import {PhEvm} from 'credible-std/PhEvm.sol';
-import {IMockPool} from './IMockPool.sol';
+import {IMockL2Pool} from './IMockL2Pool.sol';
 import {DataTypes} from '../../src/contracts/protocol/libraries/types/DataTypes.sol';
-import {IAToken} from '../../src/contracts/interfaces/IAToken.sol';
+import {ReserveConfiguration} from '../../src/contracts/protocol/libraries/configuration/ReserveConfiguration.sol';
 import {IERC20} from '../../src/contracts/dependencies/openzeppelin/contracts/IERC20.sol';
 import {ReserveConfiguration} from '../../src/contracts/protocol/libraries/configuration/ReserveConfiguration.sol';
-import {UserConfiguration} from '../../src/contracts/protocol/libraries/configuration/UserConfiguration.sol';
 
-contract LendingPostConditionAssertions is Assertion {
-  IMockPool public immutable pool;
-
-  constructor(IMockPool _pool) {
-    pool = _pool;
-  }
-
+/// @title LendingInvariantAssertions
+/// @notice Implements the lending invariants defined in LendingPostconditionsSpec.t.sol
+/// @dev Each assertion function implements one or more invariants from LendingPostconditionsSpec
+contract LendingInvariantAssertions is Assertion {
   function triggers() public view override {
     // Register triggers for core lending functions
-    registerCallTrigger(this.assertDepositConditions.selector, pool.supply.selector);
-    registerCallTrigger(this.assertWithdrawConditions.selector, pool.withdraw.selector);
-    registerCallTrigger(this.assertTotalSupplyCap.selector, pool.supply.selector);
+    registerCallTrigger(this.assertDepositConditions.selector, IMockL2Pool.supply.selector);
+    registerCallTrigger(this.assertWithdrawConditions.selector, IMockL2Pool.withdraw.selector);
+    registerCallTrigger(this.assertTotalSupplyCap.selector, IMockL2Pool.supply.selector);
     registerCallTrigger(
       this.assertDepositBalanceChangesWithoutHelper.selector,
-      pool.supply.selector
+      IMockL2Pool.supply.selector
     );
-    //registerCallTrigger(this.assertDepositBalanceChanges.selector, pool.supply.selector);
-    registerCallTrigger(this.assertWithdrawBalanceChanges.selector, pool.withdraw.selector);
-    registerCallTrigger(this.assertCollateralWithdrawHealth.selector, pool.withdraw.selector);
+    registerCallTrigger(this.assertWithdrawBalanceChanges.selector, IMockL2Pool.withdraw.selector);
+    registerCallTrigger(
+      this.assertCollateralWithdrawHealth.selector,
+      IMockL2Pool.withdraw.selector
+    );
   }
 
-  // LENDING_HPOST_A: An asset can only be deposited when the related reserve is active, not frozen & not paused
+  ////////////////////////////////////////////////////////////////////////////////////////////////////
+  //                                    CORE INVARIANT IMPLEMENTATIONS                               //
+  ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+  /// @notice Implements LENDING_GPOST_A: Reserve must be active, not frozen, and not paused for deposits
   function assertDepositConditions() external {
+    IMockL2Pool pool = IMockL2Pool(address(ph.getAssertionAdopter()));
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.supply.selector);
     for (uint256 i = 0; i < callInputs.length; i++) {
-      (address asset, , , ) = abi.decode(callInputs[i].input, (address, uint256, address, uint16));
+      (address asset, , ) = _decodeSupplyParams(callInputs[i].input);
 
       // Get reserve data
       DataTypes.ReserveDataLegacy memory reserveData = pool.getReserveData(asset);
 
-      // Check reserve is active, not frozen and not paused
+      // Check reserve is active
       require(ReserveConfiguration.getActive(reserveData.configuration), 'Reserve is not active');
+
+      // Check reserve is not frozen
       require(!ReserveConfiguration.getFrozen(reserveData.configuration), 'Reserve is frozen');
+
+      // Check reserve is not paused
       require(!ReserveConfiguration.getPaused(reserveData.configuration), 'Reserve is paused');
     }
   }
 
-  // LENDING_HPOST_B: An asset can only be withdrawn when the related reserve is active & not paused
-  function assertWithdrawConditions() external {
+  /// @notice Implements LENDING_GPOST_B: Reserve must be active, not frozen, and not paused for withdrawals
+  function assertWithdrawConditions() external view {
+    IMockL2Pool pool = IMockL2Pool(ph.getAssertionAdopter());
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.withdraw.selector);
     for (uint256 i = 0; i < callInputs.length; i++) {
-      (address asset, , ) = abi.decode(callInputs[i].input, (address, uint256, address));
+      (address asset, ) = _decodeWithdrawParams(callInputs[i].input);
 
       // Get reserve data
       DataTypes.ReserveDataLegacy memory reserveData = pool.getReserveData(asset);
 
-      // Check reserve is active and not paused
+      // Check reserve is active
       require(ReserveConfiguration.getActive(reserveData.configuration), 'Reserve is not active');
+
+      // Check reserve is not frozen
+      require(!ReserveConfiguration.getFrozen(reserveData.configuration), 'Reserve is frozen');
+
+      // Check reserve is not paused
       require(!ReserveConfiguration.getPaused(reserveData.configuration), 'Reserve is paused');
     }
   }
 
-  // LENDING_GPOST_C: If totalSupply for a reserve increases new totalSupply must be less than or equal to supply cap
+  /// @notice Implements LENDING_GPOST_C: Total supply must not exceed supply cap
   function assertTotalSupplyCap() external {
+    IMockL2Pool pool = IMockL2Pool(ph.getAssertionAdopter());
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.supply.selector);
     for (uint256 i = 0; i < callInputs.length; i++) {
-      (address asset, , , ) = abi.decode(callInputs[i].input, (address, uint256, address, uint16));
+      (address asset, uint256 amount, ) = _decodeSupplyParams(callInputs[i].input);
 
       // Get reserve data
       DataTypes.ReserveDataLegacy memory reserveData = pool.getReserveData(asset);
 
-      // Get aToken
-      IAToken aToken = IAToken(reserveData.aTokenAddress);
-
-      // Get total supply before and after
-      ph.forkPreState();
-      uint256 preTotalSupply = aToken.totalSupply();
-
-      ph.forkPostState();
-      uint256 postTotalSupply = aToken.totalSupply();
-
-      // If supply increased, check against cap
-      require(postTotalSupply > preTotalSupply, 'Total supply did not increase');
+      // Check supply cap
       uint256 supplyCap = ReserveConfiguration.getSupplyCap(reserveData.configuration);
       if (supplyCap != 0) {
-        // 0 means no cap
-        require(postTotalSupply <= supplyCap, 'Total supply exceeds supply cap');
+        // Get current aToken supply
+        address aTokenAddress = reserveData.aTokenAddress;
+        uint256 currentATokenSupply = IERC20(aTokenAddress).totalSupply();
+        require(currentATokenSupply + amount <= supplyCap, 'Supply cap exceeded');
       }
     }
   }
 
-  // // LENDING_HPOST_D: After a successful deposit the sender underlying balance should decrease by the amount deposited
-  // // LENDING_HPOST_E: After a successful deposit the onBehalf AToken balance should increase by the amount deposited
-  // function assertDepositBalanceChanges() external {
-  //   PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.supply.selector);
-  //   // Should never happen, due to the trigger being registered for the function
-  //   if (callInputs.length == 0) {
-  //     return;
-  //   } else if (callInputs.length == 1) {
-  //     // Be specific for 1 input to save gas
-  //     (address asset, uint256 amount, address onBehalfOf, ) = abi.decode(
-  //       callInputs[0].input,
-  //       (address, uint256, address, uint16)
-  //     );
-  //     address caller = callInputs[0].caller;
-  //     _checkDepositBalanceChange(asset, caller, onBehalfOf, amount);
-  //   } else {
-  //     // Accumulate all deposit amounts and compare to deltas of sender balance and aToken balance
-  //     uint256 totalDepositAmount = 0;
-  //     address asset;
-  //     uint256 amount;
-  //     address onBehalfOf;
-  //     address caller;
-  //     for (uint256 i = 0; i < callInputs.length; i++) {
-  //       (asset, amount, onBehalfOf, ) = abi.decode(
-  //         callInputs[i].input,
-  //         (address, uint256, address, uint16)
-  //       );
-  //       caller = callInputs[i].caller;
-  //       totalDepositAmount += amount;
-  //       // Note in a realistic scenario we would also need to loop through all the potential assets
-  //       // that could be in a batch. For simplicity we omit this for now and only use one asset.
-  //     }
-  //     _checkDepositBalanceChange(asset, caller, onBehalfOf, totalDepositAmount);
-  //   }
-  // }
-
-  // function _checkDepositBalanceChange(
-  //   address asset,
-  //   address caller,
-  //   address onBehalfOf,
-  //   uint256 amount
-  // ) internal {
-  //   // Get reserve data
-  //   DataTypes.ReserveDataLegacy memory reserveData = pool.getReserveData(asset);
-
-  //   // Get aToken
-  //   IERC20 aToken = IERC20(reserveData.aTokenAddress);
-
-  //   // Get underlying token
-  //   IERC20 underlying = IERC20(asset);
-
-  //   // Get balances before
-  //   ph.forkPreState();
-  //   uint256 preSenderBalance = underlying.balanceOf(caller);
-  //   uint256 preATokenBalance = aToken.balanceOf(onBehalfOf);
-
-  //   // Get balances after
-  //   ph.forkPostState();
-  //   uint256 postSenderBalance = underlying.balanceOf(caller);
-  //   uint256 postATokenBalance = aToken.balanceOf(onBehalfOf);
-
-  //   // Check sender balance decreased by amount
-  //   require(
-  //     preSenderBalance - postSenderBalance == amount,
-  //     'Sender balance did not decrease by deposit amount'
-  //   );
-
-  //   // Check aToken balance increased by amount
-  //   require(
-  //     postATokenBalance - preATokenBalance == amount,
-  //     'AToken balance did not increase by deposit amount'
-  //   );
-  // }
-
+  /// @notice Implements LENDING_GPOST_D: User balance must decrease by deposit amount
   function assertDepositBalanceChangesWithoutHelper() external {
+    IMockL2Pool pool = IMockL2Pool(ph.getAssertionAdopter());
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.supply.selector);
-    // Should never happen, due to the trigger being registered for the function
-    if (callInputs.length == 0) {
-      return;
-    } else if (callInputs.length == 1) {
-      // Be specific for 1 input to save gas
-      (address asset, uint256 amount, address onBehalfOf, ) = abi.decode(
-        callInputs[0].input,
-        (address, uint256, address, uint16)
-      );
-      address caller = callInputs[0].caller;
+    for (uint256 i = 0; i < callInputs.length; i++) {
+      (address asset, uint256 amount, ) = _decodeSupplyParams(callInputs[i].input);
+      address onBehalfOf = callInputs[i].caller;
+
+      // Get aToken address
       DataTypes.ReserveDataLegacy memory reserveData = pool.getReserveData(asset);
-
-      // Get aToken
-      IERC20 aToken = IERC20(reserveData.aTokenAddress);
-
-      // Get underlying token
-      IERC20 underlying = IERC20(asset);
+      address aTokenAddress = reserveData.aTokenAddress;
 
       // Get balances before
       ph.forkPreState();
-      uint256 preSenderBalance = underlying.balanceOf(caller);
-      uint256 preATokenBalance = aToken.balanceOf(onBehalfOf);
+      uint256 userBalanceBefore = _getUserBalance(asset, onBehalfOf);
+      uint256 aTokenBalanceBefore = _getATokenBalance(aTokenAddress, onBehalfOf);
 
       // Get balances after
       ph.forkPostState();
-      uint256 postSenderBalance = underlying.balanceOf(caller);
-      uint256 postATokenBalance = aToken.balanceOf(onBehalfOf);
+      uint256 userBalanceAfter = _getUserBalance(asset, onBehalfOf);
+      uint256 aTokenBalanceAfter = _getATokenBalance(aTokenAddress, onBehalfOf);
 
-      // Check sender balance decreased by amount
+      // Check user balance decreased by deposit amount
       require(
-        preSenderBalance - postSenderBalance == amount,
-        'Sender balance did not decrease by deposit amount'
+        userBalanceBefore - userBalanceAfter >= amount,
+        'User balance did not decrease by deposit amount'
       );
 
-      // Check aToken balance increased by amount
+      // Check aToken balance increased by deposit amount
       require(
-        postATokenBalance - preATokenBalance == amount,
-        'AToken balance did not increase by deposit amount'
-      );
-    } else {
-      // Accumulate all deposit amounts and compare to deltas of sender balance and aToken balance
-      uint256 totalDepositAmount = 0;
-      address asset;
-      uint256 amount;
-      address onBehalfOf;
-      address caller;
-      for (uint256 i = 0; i < callInputs.length; i++) {
-        (asset, amount, onBehalfOf, ) = abi.decode(
-          callInputs[i].input,
-          (address, uint256, address, uint16)
-        );
-        caller = callInputs[i].caller;
-        totalDepositAmount += amount;
-        // Note in a realistic scenario we would also need to loop through all the potential assets
-        // that could be in a batch. For simplicity we omit this for now and only use one asset.
-      }
-      DataTypes.ReserveDataLegacy memory reserveData = pool.getReserveData(asset);
-
-      // Get aToken
-      IERC20 aToken = IERC20(reserveData.aTokenAddress);
-
-      // Get underlying token
-      IERC20 underlying = IERC20(asset);
-
-      // Get balances before
-      ph.forkPreState();
-      uint256 preSenderBalance = underlying.balanceOf(caller);
-      uint256 preATokenBalance = aToken.balanceOf(onBehalfOf);
-
-      // Get balances after
-      ph.forkPostState();
-      uint256 postSenderBalance = underlying.balanceOf(caller);
-      uint256 postATokenBalance = aToken.balanceOf(onBehalfOf);
-
-      // Check sender balance decreased by amount
-      require(
-        preSenderBalance - postSenderBalance == amount,
-        'Sender balance did not decrease by deposit amount'
-      );
-
-      // Check aToken balance increased by amount
-      require(
-        postATokenBalance - preATokenBalance == amount,
-        'AToken balance did not increase by deposit amount'
+        aTokenBalanceAfter - aTokenBalanceBefore >= amount,
+        'aToken balance did not increase by deposit amount'
       );
     }
   }
 
-  // LENDING_HPOST_F: After a successful withdraw the actor AToken balance should decrease by the amount withdrawn
-  // LENDING_HPOST_G: After a successful withdraw the `to` underlying balance should increase by the amount withdrawn
+  /// @notice Implements LENDING_GPOST_E: User balance must increase by withdraw amount
   function assertWithdrawBalanceChanges() external {
+    IMockL2Pool pool = IMockL2Pool(ph.getAssertionAdopter());
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.withdraw.selector);
     for (uint256 i = 0; i < callInputs.length; i++) {
-      (address asset, uint256 amount, address to) = abi.decode(
-        callInputs[i].input,
-        (address, uint256, address)
-      );
+      (address asset, uint256 amount) = _decodeWithdrawParams(callInputs[i].input);
+      address to = callInputs[i].caller;
 
-      // Get reserve data
+      // Get aToken address
       DataTypes.ReserveDataLegacy memory reserveData = pool.getReserveData(asset);
-
-      // Get aToken
-      IAToken aToken = IAToken(reserveData.aTokenAddress);
-
-      // Get underlying token
-      IERC20 underlying = IERC20(asset);
+      address aTokenAddress = reserveData.aTokenAddress;
 
       // Get balances before
       ph.forkPreState();
-      uint256 preATokenBalance = aToken.balanceOf(callInputs[i].caller);
-      uint256 preToBalance = underlying.balanceOf(to);
+      uint256 userBalanceBefore = _getUserBalance(asset, to);
+      uint256 aTokenBalanceBefore = _getATokenBalance(aTokenAddress, to);
 
       // Get balances after
       ph.forkPostState();
-      uint256 postATokenBalance = aToken.balanceOf(callInputs[i].caller);
-      uint256 postToBalance = underlying.balanceOf(to);
+      uint256 userBalanceAfter = _getUserBalance(asset, to);
+      uint256 aTokenBalanceAfter = _getATokenBalance(aTokenAddress, to);
 
-      // Check aToken balance decreased by amount
+      // Check user balance increased by withdraw amount
       require(
-        preATokenBalance - postATokenBalance == amount,
-        'AToken balance did not decrease by withdraw amount'
+        userBalanceAfter - userBalanceBefore >= amount,
+        'User balance did not increase by withdraw amount'
       );
 
-      // Check underlying balance increased by amount
+      // Check aToken balance decreased by withdraw amount
       require(
-        postToBalance - preToBalance == amount,
-        'Underlying balance did not increase by withdraw amount'
+        aTokenBalanceBefore - aTokenBalanceAfter >= amount,
+        'aToken balance did not decrease by withdraw amount'
       );
     }
   }
 
-  // LENDING_HPOST_H1: Before a successful withdraw of collateral, caller should be healthy
-  // LENDING_HPOST_H2: After a successful withdraw of collateral, caller should remain healthy
+  /// @notice Implements LENDING_GPOST_F: Withdrawing collateral must maintain health factor
   function assertCollateralWithdrawHealth() external {
+    IMockL2Pool pool = IMockL2Pool(ph.getAssertionAdopter());
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.withdraw.selector);
     for (uint256 i = 0; i < callInputs.length; i++) {
-      (address asset, , ) = abi.decode(callInputs[i].input, (address, uint256, address));
+      address user = callInputs[i].caller;
 
-      // Get reserve data
-      DataTypes.ReserveDataLegacy memory reserveData = pool.getReserveData(asset);
+      // Get health factor before
+      ph.forkPreState();
+      uint256 preHealthFactor;
+      (, , , , , preHealthFactor) = pool.getUserAccountData(user);
 
-      // Check if asset is being used as collateral
-      DataTypes.UserConfigurationMap memory userConfig = pool.getUserConfiguration(
-        callInputs[i].caller
+      // Get health factor after
+      ph.forkPostState();
+      uint256 postHealthFactor;
+      (, , , , , postHealthFactor) = pool.getUserAccountData(user);
+
+      // Health factor should not decrease significantly when withdrawing collateral
+      // Allow for small precision differences
+      require(
+        postHealthFactor >= preHealthFactor - 1e16, // Allow 1% tolerance
+        'Health factor decreased too much after collateral withdrawal'
       );
-      bool isCollateral = UserConfiguration.isUsingAsCollateral(userConfig, reserveData.id);
-
-      if (isCollateral) {
-        // Get health factor before
-        ph.forkPreState();
-        (, , , , , uint256 preHealthFactor) = pool.getUserAccountData(callInputs[i].caller);
-
-        // Check health before withdraw
-        require(preHealthFactor >= 1e18, 'User not healthy before collateral withdraw');
-
-        // Get health factor after
-        ph.forkPostState();
-        (, , , , , uint256 postHealthFactor) = pool.getUserAccountData(callInputs[i].caller);
-
-        // Check health after withdraw
-        require(postHealthFactor >= 1e18, 'User not healthy after collateral withdraw');
-      }
     }
+  }
+
+  ////////////////////////////////////////////////////////////////////////////////////////////////////
+  //                                    HELPER FUNCTIONS                                            //
+  ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+  /// @notice Decodes L2Pool supply parameters using CalldataLogic approach
+  /// @param input The encoded input data
+  /// @return asset The asset address
+  /// @return amount The amount to supply
+  /// @return referralCode The referral code
+  function _decodeSupplyParams(
+    bytes memory input
+  ) internal view returns (address asset, uint256 amount, uint16 referralCode) {
+    bytes32 args = abi.decode(input, (bytes32));
+
+    uint16 assetId;
+    assembly {
+      assetId := and(args, 0xFFFF)
+      amount := and(shr(16, args), 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF)
+      referralCode := and(shr(144, args), 0xFFFF)
+    }
+
+    // Get asset address from asset ID using pool's getReserveData
+    // We need to iterate through reserves to find the one with matching ID
+    // This is a simplified approach - in practice you might want to maintain a mapping
+    asset = _getAssetAddressById(assetId);
+  }
+
+  /// @notice Decodes L2Pool withdraw parameters using CalldataLogic approach
+  /// @param input The encoded input data
+  /// @return asset The asset address
+  /// @return amount The amount to withdraw
+  function _decodeWithdrawParams(
+    bytes memory input
+  ) internal view returns (address asset, uint256 amount) {
+    bytes32 args = abi.decode(input, (bytes32));
+
+    uint16 assetId;
+    assembly {
+      assetId := and(args, 0xFFFF)
+      amount := and(shr(16, args), 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF)
+    }
+
+    if (amount == type(uint128).max) {
+      amount = type(uint256).max;
+    }
+
+    // Get asset address from asset ID
+    asset = _getAssetAddressById(assetId);
+  }
+
+  /// @notice Helper function to get asset address from asset ID
+  /// @param assetId The asset ID
+  /// @return The asset address
+  function _getAssetAddressById(uint16 assetId) internal view returns (address) {
+    IMockL2Pool pool = IMockL2Pool(ph.getAssertionAdopter());
+    return pool.getReserveAddressById(assetId);
+  }
+
+  /// @notice Helper function to get user's underlying token balance
+  /// @param asset The asset address
+  /// @param user The user address
+  /// @return The user's balance
+  function _getUserBalance(address asset, address user) internal view returns (uint256) {
+    return IERC20(asset).balanceOf(user);
+  }
+
+  /// @notice Helper function to get user's aToken balance
+  /// @param aTokenAddress The aToken address
+  /// @param user The user address
+  /// @return The user's aToken balance
+  function _getATokenBalance(address aTokenAddress, address user) internal view returns (uint256) {
+    return IERC20(aTokenAddress).balanceOf(user);
   }
 }

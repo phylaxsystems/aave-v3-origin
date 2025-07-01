@@ -3,20 +3,20 @@ pragma solidity ^0.8.13;
 
 import {Assertion} from 'credible-std/Assertion.sol';
 import {PhEvm} from 'credible-std/PhEvm.sol';
-import {IPool} from '../../src/contracts/interfaces/IPool.sol';
+import {IMockL2Pool} from './IMockL2Pool.sol';
 
 /// @title HealthFactorAssertions
 /// @notice Implements the health factor invariants defined in HFPostconditionsSpec.t.sol
 /// @dev Each assertion function implements one or more invariants from HFPostconditionsSpec
 /// @dev Uses pool's getUserAccountData which is expensive and causes gas limit issues
 contract HealthFactorAssertions is Assertion {
-  IPool public immutable pool;
+  IMockL2Pool public immutable pool;
 
   // Constants from ValidationLogic
   uint256 constant HEALTH_FACTOR_LIQUIDATION_THRESHOLD = 1e18;
   uint256 constant MINIMUM_HEALTH_FACTOR_LIQUIDATION_THRESHOLD = 0.95e18;
 
-  constructor(IPool _pool) {
+  constructor(IMockL2Pool _pool) {
     pool = _pool;
   }
 
@@ -48,10 +48,9 @@ contract HealthFactorAssertions is Assertion {
   function assertNonDecreasingHfActions() external {
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.supply.selector);
     for (uint256 i = 0; i < callInputs.length; i++) {
-      (, , address onBehalfOf, ) = abi.decode(
-        callInputs[i].input,
-        (address, uint256, address, uint16)
-      );
+      // Decode L2Pool supply parameters: assetId (16 bits) + amount (128 bits) + referralCode (16 bits)
+      // Note: onBehalfOf is always msg.sender in L2Pool, so we use the caller
+      address onBehalfOf = callInputs[i].caller;
 
       // Get health factor before and after using expensive getUserAccountData
       ph.forkPreState();
@@ -74,10 +73,9 @@ contract HealthFactorAssertions is Assertion {
   function assertNonIncreasingHfActions() external {
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.borrow.selector);
     for (uint256 i = 0; i < callInputs.length; i++) {
-      (, , , , address onBehalfOf) = abi.decode(
-        callInputs[i].input,
-        (address, uint256, uint256, uint16, address)
-      );
+      // Decode L2Pool borrow parameters: assetId (16 bits) + amount (128 bits) + interestRateMode (8 bits) + referralCode (16 bits)
+      // Note: onBehalfOf is always msg.sender in L2Pool, so we use the caller
+      address onBehalfOf = callInputs[i].caller;
 
       // Get health factor before and after using expensive getUserAccountData
       ph.forkPreState();
@@ -100,10 +98,9 @@ contract HealthFactorAssertions is Assertion {
   function assertHealthyToUnhealthy() external {
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.borrow.selector);
     for (uint256 i = 0; i < callInputs.length; i++) {
-      (, , , , address onBehalfOf) = abi.decode(
-        callInputs[i].input,
-        (address, uint256, uint256, uint16, address)
-      );
+      // Decode L2Pool borrow parameters: assetId (16 bits) + amount (128 bits) + interestRateMode (8 bits) + referralCode (16 bits)
+      // Note: onBehalfOf is always msg.sender in L2Pool, so we use the caller
+      address onBehalfOf = callInputs[i].caller;
 
       // Get health factor before and after using expensive getUserAccountData
       ph.forkPreState();
@@ -128,10 +125,9 @@ contract HealthFactorAssertions is Assertion {
   function assertUnsafeAfterAction() external {
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.borrow.selector);
     for (uint256 i = 0; i < callInputs.length; i++) {
-      (, , , , address onBehalfOf) = abi.decode(
-        callInputs[i].input,
-        (address, uint256, uint256, uint16, address)
-      );
+      // Decode L2Pool borrow parameters: assetId (16 bits) + amount (128 bits) + interestRateMode (8 bits) + referralCode (16 bits)
+      // Note: onBehalfOf is always msg.sender in L2Pool, so we use the caller
+      address onBehalfOf = callInputs[i].caller;
 
       // Get health factor after action using expensive getUserAccountData
       ph.forkPostState();
@@ -157,10 +153,12 @@ contract HealthFactorAssertions is Assertion {
       pool.liquidationCall.selector
     );
     for (uint256 i = 0; i < callInputs.length; i++) {
-      (, , address user, , ) = abi.decode(
-        callInputs[i].input,
-        (address, address, address, uint256, bool)
-      );
+      // L2Pool liquidationCall takes two bytes32 parameters
+      (bytes32 args1, ) = abi.decode(callInputs[i].input, (bytes32, bytes32));
+      // Decode L2Pool liquidation parameters:
+      // args1: collateralAssetId (16 bits) + debtAssetId (16 bits) + user (160 bits)
+      // args2: debtToCover (128 bits) + receiveAToken (1 bit) + unused (127 bits)
+      address user = address(uint160(uint256(args1) >> 32));
 
       // Get health factor before action using expensive getUserAccountData
       ph.forkPreState();
@@ -185,13 +183,12 @@ contract HealthFactorAssertions is Assertion {
 
   /// @notice Implements HF_GPOST_A for supply operations
   /// @dev Ensures supply operations maintain non-decreasing health factor
-  function assertSupplyNonDecreasingHf() external {
+  function assertSupplyNonDecreasingHf() external view {
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.supply.selector);
     for (uint256 i = 0; i < callInputs.length; i++) {
-      (, , address onBehalfOf, ) = abi.decode(
-        callInputs[i].input,
-        (address, uint256, address, uint16)
-      );
+      // Decode L2Pool supply parameters: assetId (16 bits) + amount (128 bits) + referralCode (16 bits)
+      // Note: onBehalfOf is always msg.sender in L2Pool, so we use the caller
+      address onBehalfOf = callInputs[i].caller;
 
       // Get health factor after supply using expensive getUserAccountData
       uint256 healthFactor;
@@ -206,13 +203,12 @@ contract HealthFactorAssertions is Assertion {
 
   /// @notice Implements HF_GPOST_C for borrow operations
   /// @dev Ensures borrow operations maintain healthy positions
-  function assertBorrowHealthyToUnhealthy() external {
+  function assertBorrowHealthyToUnhealthy() external view {
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.borrow.selector);
     for (uint256 i = 0; i < callInputs.length; i++) {
-      (, , , , address onBehalfOf) = abi.decode(
-        callInputs[i].input,
-        (address, uint256, uint256, uint16, address)
-      );
+      // Decode L2Pool borrow parameters: assetId (16 bits) + amount (128 bits) + interestRateMode (8 bits) + referralCode (16 bits)
+      // Note: onBehalfOf is always msg.sender in L2Pool, so we use the caller
+      address onBehalfOf = callInputs[i].caller;
 
       // Get health factor after borrow using expensive getUserAccountData
       uint256 healthFactor;
@@ -227,7 +223,7 @@ contract HealthFactorAssertions is Assertion {
 
   /// @notice Implements HF_GPOST_B for withdraw operations
   /// @dev Ensures withdraw operations maintain non-increasing health factor
-  function assertWithdrawNonIncreasingHf() external {
+  function assertWithdrawNonIncreasingHf() external view {
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.withdraw.selector);
     for (uint256 i = 0; i < callInputs.length; i++) {
       // Get health factor after withdraw using expensive getUserAccountData
@@ -243,13 +239,12 @@ contract HealthFactorAssertions is Assertion {
 
   /// @notice Implements HF_GPOST_A for repay operations
   /// @dev Ensures repay operations maintain non-decreasing health factor
-  function assertRepayNonDecreasingHf() external {
+  function assertRepayNonDecreasingHf() external view {
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.repay.selector);
     for (uint256 i = 0; i < callInputs.length; i++) {
-      (, , , address onBehalfOf) = abi.decode(
-        callInputs[i].input,
-        (address, uint256, uint256, address)
-      );
+      // Decode L2Pool repay parameters: assetId (16 bits) + amount (128 bits) + interestRateMode (8 bits)
+      // Note: onBehalfOf is always msg.sender in L2Pool, so we use the caller
+      address onBehalfOf = callInputs[i].caller;
 
       // Get health factor after repay using expensive getUserAccountData
       uint256 healthFactor;
@@ -270,10 +265,12 @@ contract HealthFactorAssertions is Assertion {
       pool.liquidationCall.selector
     );
     for (uint256 i = 0; i < callInputs.length; i++) {
-      (, , address user, , ) = abi.decode(
-        callInputs[i].input,
-        (address, address, address, uint256, bool)
-      );
+      // L2Pool liquidationCall takes two bytes32 parameters
+      (bytes32 args1, ) = abi.decode(callInputs[i].input, (bytes32, bytes32));
+      // Decode L2Pool liquidation parameters:
+      // args1: collateralAssetId (16 bits) + debtAssetId (16 bits) + user (160 bits)
+      // args2: debtToCover (128 bits) + receiveAToken (1 bit) + unused (127 bits)
+      address user = address(uint160(uint256(args1) >> 32));
 
       // Get health factor before liquidation using expensive getUserAccountData
       uint256 preHealthFactor;
@@ -300,13 +297,14 @@ contract HealthFactorAssertions is Assertion {
 
   /// @notice Implements collateral-specific health factor checks
   /// @dev Ensures setting collateral maintains healthy positions
-  function assertSetUserUseReserveAsCollateral() external {
+  function assertSetUserUseReserveAsCollateral() external view {
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(
       address(pool),
       pool.setUserUseReserveAsCollateral.selector
     );
     for (uint256 i = 0; i < callInputs.length; i++) {
-      (, bool useAsCollateral) = abi.decode(callInputs[i].input, (address, bool));
+      // Decode L2Pool setUserUseReserveAsCollateral parameters: assetId (16 bits) + useAsCollateral (1 bit) + unused (15 bits)
+      bool useAsCollateral = uint8(uint256(abi.decode(callInputs[i].input, (bytes32))) >> 16) != 0;
 
       // Get health factor after setting collateral using expensive getUserAccountData
       uint256 healthFactor;

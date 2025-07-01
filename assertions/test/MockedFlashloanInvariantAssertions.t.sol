@@ -4,12 +4,13 @@ pragma solidity ^0.8.13;
 import {Test} from 'forge-std/Test.sol';
 import {CredibleTest} from 'credible-std/CredibleTest.sol';
 import {FlashloanPostConditionAssertions} from '../src/FlashloanInvariantAssertions.a.sol';
+import {IMockL2Pool} from '../src/IMockL2Pool.sol';
 import {BrokenPool} from '../mocks/BrokenPool.sol';
 import {IERC20} from '../../src/contracts/dependencies/openzeppelin/contracts/IERC20.sol';
 import {TestnetERC20} from '../../src/contracts/mocks/testnet-helpers/TestnetERC20.sol';
 
 contract TestMockedFlashloanInvariantAssertions is CredibleTest, Test {
-  BrokenPool public pool;
+  IMockL2Pool public pool;
   FlashloanPostConditionAssertions public assertions;
   address public user;
   TestnetERC20 public asset;
@@ -18,7 +19,7 @@ contract TestMockedFlashloanInvariantAssertions is CredibleTest, Test {
 
   function setUp() public {
     // Deploy mock pool
-    pool = new BrokenPool();
+    pool = IMockL2Pool(address(new BrokenPool()));
 
     // Set up user and asset
     user = address(0x1);
@@ -29,12 +30,12 @@ contract TestMockedFlashloanInvariantAssertions is CredibleTest, Test {
     assertions = new FlashloanPostConditionAssertions(pool);
 
     // Set up reserve states according to the invariant
-    pool.setReserveActive(address(asset), true);
-    pool.setReserveFrozen(address(asset), false);
-    pool.setReservePaused(address(asset), false);
+    BrokenPool(address(pool)).setReserveActive(address(asset), true);
+    BrokenPool(address(pool)).setReserveFrozen(address(asset), false);
+    BrokenPool(address(pool)).setReservePaused(address(asset), false);
 
     // Set up mock pool to break flashloan repayment
-    pool.setBreakFlashloanRepayment(true);
+    BrokenPool(address(pool)).setBreakFlashloanRepayment(true);
 
     // Mint tokens to the pool
     asset.mint(address(pool), 1000e18);

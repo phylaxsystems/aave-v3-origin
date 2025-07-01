@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.13;
 
-import {IMockPool} from '../src/IMockPool.sol';
+import {IMockL2Pool} from '../src/IMockL2Pool.sol';
 import {IERC20} from '../../src/contracts/dependencies/openzeppelin/contracts/IERC20.sol';
 import {DataTypes} from '../../src/contracts/protocol/libraries/types/DataTypes.sol';
 
-contract WorkingProtocol is IMockPool {
+contract WorkingProtocol is IMockL2Pool {
   mapping(address => mapping(address => uint256)) public userCollateral;
   mapping(address => mapping(address => uint256)) public userDebt;
   mapping(address => uint256) public healthFactors;
@@ -22,12 +22,7 @@ contract WorkingProtocol is IMockPool {
     admin = msg.sender;
   }
 
-  function supply(
-    address asset,
-    uint256 amount,
-    address onBehalfOf,
-    uint16 referralCode
-  ) external override {
+  function supply(address asset, uint256 amount, address onBehalfOf, uint16 referralCode) external {
     userCollateral[onBehalfOf][asset] += amount;
     _updateHealthFactor(onBehalfOf);
   }
@@ -38,7 +33,7 @@ contract WorkingProtocol is IMockPool {
     uint256 interestRateMode,
     uint16 referralCode,
     address onBehalfOf
-  ) external override {
+  ) external {
     userDebt[onBehalfOf][asset] += amount;
     _updateHealthFactor(onBehalfOf);
   }
@@ -48,13 +43,13 @@ contract WorkingProtocol is IMockPool {
     uint256 amount,
     uint256 interestRateMode,
     address onBehalfOf
-  ) external override returns (uint256) {
+  ) external returns (uint256) {
     userDebt[onBehalfOf][asset] -= amount;
     _updateHealthFactor(onBehalfOf);
     return amount;
   }
 
-  function withdraw(address asset, uint256 amount, address to) external override returns (uint256) {
+  function withdraw(address asset, uint256 amount, address to) external returns (uint256) {
     userCollateral[msg.sender][asset] -= amount;
     _updateHealthFactor(msg.sender);
     return amount;
@@ -66,7 +61,7 @@ contract WorkingProtocol is IMockPool {
     address user,
     uint256 debtToCover,
     bool receiveAToken
-  ) external override {
+  ) external {
     require(!paused, 'Protocol paused');
     require(healthFactors[user] < 1e18, 'User health factor not below 1');
 
@@ -113,7 +108,7 @@ contract WorkingProtocol is IMockPool {
 
   function getReserveData(
     address asset
-  ) external view override returns (DataTypes.ReserveDataLegacy memory) {
+  ) external view returns (DataTypes.ReserveDataLegacy memory) {
     DataTypes.ReserveDataLegacy memory data;
     // Set the configuration based on reserve state
     data.configuration.data = 0;
@@ -131,55 +126,53 @@ contract WorkingProtocol is IMockPool {
 
   function getUserConfiguration(
     address user
-  ) external view override returns (DataTypes.UserConfigurationMap memory) {
+  ) external pure returns (DataTypes.UserConfigurationMap memory) {
     return DataTypes.UserConfigurationMap(0);
   }
 
-  function getCloseFactor() external pure override returns (uint256) {
+  function getCloseFactor() external pure returns (uint256) {
     return 0.5e18; // 50%
   }
 
-  function MIN_BASE_MAX_CLOSE_FACTOR_THRESHOLD() external pure override returns (uint256) {
+  function MIN_BASE_MAX_CLOSE_FACTOR_THRESHOLD() external pure returns (uint256) {
     return 0.5e18; // 50%
   }
 
-  function MIN_LEFTOVER_BASE() external pure override returns (uint256) {
+  function MIN_LEFTOVER_BASE() external pure returns (uint256) {
     return 0.1e18; // 10%
   }
 
-  function getUserCollateralBalance(
-    address user,
-    address asset
-  ) external view override returns (uint256) {
+  function getUserCollateralBalance(address user, address asset) external view returns (uint256) {
     return userCollateral[user][asset];
   }
 
-  function getUserDebtBalance(
-    address user,
-    address asset
-  ) external view override returns (uint256) {
+  function getUserDebtBalance(address user, address asset) external view returns (uint256) {
     return userDebt[user][asset];
   }
 
-  function getLiquidationGracePeriod(address asset) external view override returns (uint40) {
+  function getLiquidationGracePeriod(address asset) external view returns (uint40) {
     return liquidationGracePeriods[asset];
   }
 
-  function getReserveDeficit(address asset) external view override returns (uint256) {
+  function getReserveDeficit(address asset) external view returns (uint256) {
     return reserveDeficits[asset];
   }
 
-  function setReserveActive(address asset, bool active) external override {
+  function getReserveAddressById(uint16) external pure returns (address) {
+    return address(0);
+  }
+
+  function setReserveActive(address asset, bool active) external {
     require(msg.sender == admin, 'Only admin');
     reserveActive[asset] = active;
   }
 
-  function setReserveFrozen(address asset, bool frozen) external override {
+  function setReserveFrozen(address asset, bool frozen) external {
     require(msg.sender == admin, 'Only admin');
     reserveFrozen[asset] = frozen;
   }
 
-  function setReservePaused(address asset, bool isPaused) external override {
+  function setReservePaused(address asset, bool isPaused) external {
     require(msg.sender == admin, 'Only admin');
     reservePaused[asset] = isPaused;
   }
@@ -218,7 +211,7 @@ contract WorkingProtocol is IMockPool {
     address onBehalfOf,
     bytes calldata params,
     uint16 referralCode
-  ) external override {}
+  ) external {}
 
   // Simple flashloan implementation
   function flashLoanSimple(
@@ -227,5 +220,69 @@ contract WorkingProtocol is IMockPool {
     uint256 amount,
     bytes calldata params,
     uint16 referralCode
-  ) external override {}
+  ) external {}
+
+  // L2Pool function implementations
+  function supply(bytes32 args) external {
+    // Decode parameters (simplified)
+    uint256 amount = uint256(args >> 16) & 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF;
+    // For testing, just call the standard supply function
+    this.supply(address(0), amount, msg.sender, 0);
+  }
+
+  function supplyWithPermit(bytes32 args, bytes32, bytes32) external {
+    // Decode parameters (simplified)
+    uint256 amount = uint256(args >> 16) & 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF;
+    // For testing, just call the standard supply function
+    this.supply(address(0), amount, msg.sender, 0);
+  }
+
+  function withdraw(bytes32 args) external returns (uint256) {
+    // Decode parameters (simplified)
+    uint256 amount = uint256(args >> 16) & 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF;
+    // For testing, just call the standard withdraw function
+    return this.withdraw(address(0), amount, msg.sender);
+  }
+
+  function borrow(bytes32 args) external {
+    // Decode parameters (simplified)
+    uint256 amount = uint256(args >> 16) & 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF;
+    // For testing, just call the standard borrow function
+    this.borrow(address(0), amount, 2, 0, msg.sender);
+  }
+
+  function repay(bytes32 args) external returns (uint256) {
+    // Decode parameters (simplified)
+    uint256 amount = uint256(args >> 16) & 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF;
+    // For testing, just call the standard repay function
+    return this.repay(address(0), amount, 2, msg.sender);
+  }
+
+  function repayWithPermit(bytes32 args, bytes32, bytes32) external returns (uint256) {
+    // Decode parameters (simplified)
+    uint256 amount = uint256(args >> 16) & 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF;
+    // For testing, just call the standard repay function
+    return this.repay(address(0), amount, 2, msg.sender);
+  }
+
+  function repayWithATokens(bytes32 args) external returns (uint256) {
+    // Decode parameters (simplified)
+    uint256 amount = uint256(args >> 16) & 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF;
+    // For testing, just call the standard repay function
+    return this.repay(address(0), amount, 2, msg.sender);
+  }
+
+  function setUserUseReserveAsCollateral(bytes32 args) external {
+    // No-op for testing
+  }
+
+  function liquidationCall(bytes32 args1, bytes32 args2) external {
+    // Decode parameters (simplified)
+    uint256 args1Uint = uint256(args1);
+    uint256 args2Uint = uint256(args2);
+    address user = address(uint160(args1Uint >> 32));
+    uint256 debtToCover = args2Uint & 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF;
+    // For testing, just call the standard liquidation function
+    this.liquidationCall(address(0), address(0), user, debtToCover, false);
+  }
 }

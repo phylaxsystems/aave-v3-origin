@@ -4,7 +4,7 @@ pragma solidity ^0.8.13;
 import {Assertion} from 'credible-std/Assertion.sol';
 import {PhEvm} from 'credible-std/PhEvm.sol';
 import {IAaveOracle} from '../../src/contracts/interfaces/IAaveOracle.sol';
-import {IPool} from '../../src/contracts/interfaces/IPool.sol';
+import {IMockL2Pool} from './IMockL2Pool.sol';
 
 /**
  * @title OracleAssertions
@@ -12,12 +12,12 @@ import {IPool} from '../../src/contracts/interfaces/IPool.sol';
  */
 contract OracleAssertions is Assertion {
   IAaveOracle public oracle;
-  IPool public pool;
+  IMockL2Pool public pool;
   uint256 public constant MAX_PRICE_DEVIATION_BPS = 500; // 5% max deviation
 
   constructor(address oracleAddress, address poolAddress) {
     oracle = IAaveOracle(oracleAddress);
-    pool = IPool(poolAddress);
+    pool = IMockL2Pool(poolAddress);
   }
 
   function triggers() public view override {
@@ -47,11 +47,16 @@ contract OracleAssertions is Assertion {
   function assertBorrowPriceDeviation() external {
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.borrow.selector);
     for (uint256 i = 0; i < callInputs.length; i++) {
-      (address asset, , , , ) = abi.decode(
-        callInputs[i].input,
-        (address, uint256, uint256, uint16, address)
-      );
-      _checkPriceDeviation(asset, 'Borrow price deviation exceeds maximum allowed');
+      bytes32 args = abi.decode(callInputs[i].input, (bytes32));
+      // Decode L2Pool borrow parameters: assetId (16 bits) + amount (128 bits) + interestRateMode (8 bits) + referralCode (16 bits)
+      uint16 assetId = uint16(uint256(args));
+
+      // Get the asset address from the assetId
+      address asset = pool.getReserveAddressById(assetId);
+      if (asset == address(0)) continue; // Skip if asset not found
+
+      // Check price deviation for the asset
+      _checkPriceDeviation(asset, 'Borrow caused excessive price deviation');
     }
   }
 
@@ -61,8 +66,16 @@ contract OracleAssertions is Assertion {
   function assertSupplyPriceDeviation() external {
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.supply.selector);
     for (uint256 i = 0; i < callInputs.length; i++) {
-      (address asset, , , ) = abi.decode(callInputs[i].input, (address, uint256, address, uint16));
-      _checkPriceDeviation(asset, 'Supply price deviation exceeds maximum allowed');
+      bytes32 args = abi.decode(callInputs[i].input, (bytes32));
+      // Decode L2Pool supply parameters: assetId (16 bits) + amount (128 bits) + referralCode (16 bits)
+      uint16 assetId = uint16(uint256(args));
+
+      // Get the asset address from the assetId
+      address asset = pool.getReserveAddressById(assetId);
+      if (asset == address(0)) continue; // Skip if asset not found
+
+      // Check price deviation for the asset
+      _checkPriceDeviation(asset, 'Supply caused excessive price deviation');
     }
   }
 
@@ -75,12 +88,28 @@ contract OracleAssertions is Assertion {
       pool.liquidationCall.selector
     );
     for (uint256 i = 0; i < callInputs.length; i++) {
-      (address collateralAsset, address debtAsset, , , ) = abi.decode(
-        callInputs[i].input,
-        (address, address, address, uint256, bool)
-      );
-      _checkPriceDeviation(collateralAsset, 'Collateral price deviation exceeds maximum allowed');
-      _checkPriceDeviation(debtAsset, 'Debt price deviation exceeds maximum allowed');
+      // L2Pool liquidationCall takes two bytes32 parameters
+      (bytes32 args1, ) = abi.decode(callInputs[i].input, (bytes32, bytes32));
+      // Decode L2Pool liquidation parameters:
+      // args1: collateralAssetId (16 bits) + debtAssetId (16 bits) + user (160 bits)
+      // args2: debtToCover (128 bits) + receiveAToken (1 bit) + unused (127 bits)
+      uint16 collateralAssetId = uint16(uint256(args1));
+      uint16 debtAssetId = uint16(uint256(args1) >> 16);
+
+      // Get the asset addresses from the assetIds
+      address collateralAsset = pool.getReserveAddressById(collateralAssetId);
+      address debtAsset = pool.getReserveAddressById(debtAssetId);
+
+      // Check price deviation for both assets
+      if (collateralAsset != address(0)) {
+        _checkPriceDeviation(
+          collateralAsset,
+          'Liquidation caused excessive collateral price deviation'
+        );
+      }
+      if (debtAsset != address(0)) {
+        _checkPriceDeviation(debtAsset, 'Liquidation caused excessive debt price deviation');
+      }
     }
   }
 
@@ -125,10 +154,15 @@ contract OracleAssertions is Assertion {
   function assertBorrowPriceConsistency() external {
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.borrow.selector);
     for (uint256 i = 0; i < callInputs.length; i++) {
-      (address asset, , , , ) = abi.decode(
-        callInputs[i].input,
-        (address, uint256, uint256, uint16, address)
-      );
+      bytes32 args = abi.decode(callInputs[i].input, (bytes32));
+      // Decode L2Pool borrow parameters: assetId (16 bits) + amount (128 bits) + interestRateMode (8 bits) + referralCode (16 bits)
+      uint16 assetId = uint16(uint256(args));
+
+      // Get the asset address from the assetId
+      address asset = pool.getReserveAddressById(assetId);
+      if (asset == address(0)) continue; // Skip if asset not found
+
+      // Check price consistency for the asset
       _checkPriceConsistency(asset);
     }
   }
@@ -139,7 +173,15 @@ contract OracleAssertions is Assertion {
   function assertSupplyPriceConsistency() external {
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.supply.selector);
     for (uint256 i = 0; i < callInputs.length; i++) {
-      (address asset, , , ) = abi.decode(callInputs[i].input, (address, uint256, address, uint16));
+      bytes32 args = abi.decode(callInputs[i].input, (bytes32));
+      // Decode L2Pool supply parameters: assetId (16 bits) + amount (128 bits) + referralCode (16 bits)
+      uint16 assetId = uint16(uint256(args));
+
+      // Get the asset address from the assetId
+      address asset = pool.getReserveAddressById(assetId);
+      if (asset == address(0)) continue; // Skip if asset not found
+
+      // Check price consistency for the asset
       _checkPriceConsistency(asset);
     }
   }
@@ -153,12 +195,25 @@ contract OracleAssertions is Assertion {
       pool.liquidationCall.selector
     );
     for (uint256 i = 0; i < callInputs.length; i++) {
-      (address collateralAsset, address debtAsset, , , ) = abi.decode(
-        callInputs[i].input,
-        (address, address, address, uint256, bool)
-      );
-      _checkPriceConsistency(collateralAsset);
-      _checkPriceConsistency(debtAsset);
+      // L2Pool liquidationCall takes two bytes32 parameters
+      (bytes32 args1, ) = abi.decode(callInputs[i].input, (bytes32, bytes32));
+      // Decode L2Pool liquidation parameters:
+      // args1: collateralAssetId (16 bits) + debtAssetId (16 bits) + user (160 bits)
+      // args2: debtToCover (128 bits) + receiveAToken (1 bit) + unused (127 bits)
+      uint16 collateralAssetId = uint16(uint256(args1));
+      uint16 debtAssetId = uint16(uint256(args1) >> 16);
+
+      // Get the asset addresses from the assetIds
+      address collateralAsset = pool.getReserveAddressById(collateralAssetId);
+      address debtAsset = pool.getReserveAddressById(debtAssetId);
+
+      // Check price consistency for both assets
+      if (collateralAsset != address(0)) {
+        _checkPriceConsistency(collateralAsset);
+      }
+      if (debtAsset != address(0)) {
+        _checkPriceConsistency(debtAsset);
+      }
     }
   }
 

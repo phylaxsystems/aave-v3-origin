@@ -17,13 +17,17 @@ pragma solidity ^0.8.13;
 import {Test} from 'forge-std/Test.sol';
 import {CredibleTest} from 'credible-std/CredibleTest.sol';
 import {BorrowingPostConditionAssertions} from '../src/BorrowingInvariantAssertions.a.sol';
+import {IMockL2Pool} from '../src/IMockL2Pool.sol';
 import {BrokenPool} from '../mocks/BrokenPool.sol';
 import {DataTypes} from '../../src/contracts/protocol/libraries/types/DataTypes.sol';
 import {IERC20} from '../../src/contracts/dependencies/openzeppelin/contracts/IERC20.sol';
+import {L2Encoder} from '../../src/contracts/helpers/L2Encoder.sol';
+import {IPool} from '../../src/contracts/interfaces/IPool.sol';
 
 contract TestMockedBorrowingInvariantAssertions is CredibleTest, Test {
   BrokenPool public pool;
   BorrowingPostConditionAssertions public assertions;
+  L2Encoder public l2Encoder;
   address public user;
   address public asset;
   IERC20 public underlying;
@@ -38,8 +42,11 @@ contract TestMockedBorrowingInvariantAssertions is CredibleTest, Test {
     asset = address(0x2);
     underlying = IERC20(asset);
 
+    // Set up L2Encoder for creating compact parameters
+    l2Encoder = new L2Encoder(IPool(address(pool)));
+
     // Deploy assertions contract
-    assertions = new BorrowingPostConditionAssertions(pool);
+    assertions = new BorrowingPostConditionAssertions(IMockL2Pool(address(pool)));
 
     // Set initial debt for user
     pool.setUserDebt(user, 500e6);
@@ -56,11 +63,14 @@ contract TestMockedBorrowingInvariantAssertions is CredibleTest, Test {
       ASSERTION_LABEL,
       address(pool),
       type(BorrowingPostConditionAssertions).creationCode,
-      abi.encode(pool)
+      abi.encode(IMockL2Pool(address(pool)))
     );
 
     // Set user as the caller
     vm.startPrank(user);
+
+    // Create L2Pool compact parameters for repay
+    bytes32 repayArgs = l2Encoder.encodeRepayParams(asset, repayAmount, 2);
 
     // This should revert because the mock pool doesn't decrease debt
     vm.expectRevert('Assertions Reverted');
@@ -68,13 +78,7 @@ contract TestMockedBorrowingInvariantAssertions is CredibleTest, Test {
       ASSERTION_LABEL,
       address(pool),
       0,
-      abi.encodeWithSelector(
-        pool.repay.selector,
-        asset,
-        repayAmount,
-        DataTypes.InterestRateMode.VARIABLE,
-        user
-      )
+      abi.encodeWithSelector(IMockL2Pool.repay.selector, repayArgs)
     );
     vm.stopPrank();
   }
@@ -88,11 +92,14 @@ contract TestMockedBorrowingInvariantAssertions is CredibleTest, Test {
       ASSERTION_LABEL,
       address(pool),
       type(BorrowingPostConditionAssertions).creationCode,
-      abi.encode(pool)
+      abi.encode(IMockL2Pool(address(pool)))
     );
 
     // Set user as the caller
     vm.startPrank(user);
+
+    // Create L2Pool compact parameters for borrow
+    bytes32 borrowArgs = l2Encoder.encodeBorrowParams(asset, 100e6, 2, 0);
 
     // This should revert because the mock pool allows unhealthy users to borrow
     vm.expectRevert('Assertions Reverted');
@@ -100,15 +107,18 @@ contract TestMockedBorrowingInvariantAssertions is CredibleTest, Test {
       ASSERTION_LABEL,
       address(pool),
       0,
-      abi.encodeWithSelector(
-        pool.borrow.selector,
-        asset,
-        100e6,
-        DataTypes.InterestRateMode.VARIABLE,
-        0,
-        user
-      )
+      abi.encodeWithSelector(IMockL2Pool.borrow.selector, borrowArgs)
     );
     vm.stopPrank();
+  }
+
+  /// @notice Helper function to get asset ID from asset address
+  function _getAssetId(address assetAddress) internal pure returns (uint16) {
+    // For mock assets, use a simple mapping
+    if (assetAddress == address(0x2)) {
+      return 0;
+    }
+    // Default fallback
+    return 0;
   }
 }

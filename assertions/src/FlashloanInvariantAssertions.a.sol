@@ -3,13 +3,13 @@ pragma solidity ^0.8.13;
 
 import {Assertion} from 'credible-std/Assertion.sol';
 import {PhEvm} from 'credible-std/PhEvm.sol';
-import {IMockPool} from './IMockPool.sol';
+import {IMockL2Pool} from './IMockL2Pool.sol';
 import {IERC20} from '../../src/contracts/dependencies/openzeppelin/contracts/IERC20.sol';
 
 contract FlashloanPostConditionAssertions is Assertion {
-  IMockPool public pool;
+  IMockL2Pool public pool;
 
-  constructor(IMockPool _pool) {
+  constructor(IMockL2Pool _pool) {
     pool = _pool;
   }
 
@@ -25,6 +25,8 @@ contract FlashloanPostConditionAssertions is Assertion {
       pool.flashLoanSimple.selector
     );
     for (uint256 i = 0; i < callInputs.length; i++) {
+      // Decode L2Pool flashLoanSimple parameters: receiverAddress (20 bytes) + asset (20 bytes) + amount (32 bytes) + params (variable) + referralCode (2 bytes)
+      // Note: flashLoanSimple still uses the old format since it's not part of the compact L2Pool interface
       (, address asset, uint256 amount, , ) = abi.decode(
         callInputs[i].input,
         (address, address, uint256, bytes, uint16)

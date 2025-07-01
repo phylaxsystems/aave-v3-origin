@@ -15,38 +15,45 @@ pragma solidity ^0.8.13;
 import {Test} from 'forge-std/Test.sol';
 import {CredibleTest} from 'credible-std/CredibleTest.sol';
 import {HealthFactorAssertions} from '../src/HealthFactorAssertions.a.sol';
-import {IMockPool} from '../src/IMockPool.sol';
-import {IPool} from '../../src/contracts/interfaces/IPool.sol';
+import {IMockL2Pool} from '../src/IMockL2Pool.sol';
 import {DataTypes} from '../../src/contracts/protocol/libraries/types/DataTypes.sol';
 import {IERC20} from '../../src/contracts/dependencies/openzeppelin/contracts/IERC20.sol';
 import {TestnetProcedures} from '../../tests/utils/TestnetProcedures.sol';
+import {L2Encoder} from '../../src/contracts/helpers/L2Encoder.sol';
 
 contract TestHealthFactorAssertions is CredibleTest, Test, TestnetProcedures {
-  IMockPool public pool;
+  IMockL2Pool public pool;
   HealthFactorAssertions public assertions;
+  L2Encoder public l2Encoder;
   address public user;
   address public asset;
   IERC20 public underlying;
   string public constant ASSERTION_LABEL = 'HealthFactorAssertions';
 
   function setUp() public {
-    // Initialize test environment with real contracts
-    initTestEnvironment();
+    // Initialize test environment with real contracts (L2 enabled for L2Encoder)
+    initL2TestEnvironment();
 
     // Set up user and get pool reference
     user = alice;
-    pool = IMockPool(report.poolProxy);
+    pool = IMockL2Pool(report.poolProxy);
     asset = tokenList.usdx;
     underlying = IERC20(asset);
 
-    // Deploy assertions contract - cast IMockPool to IPool
-    assertions = new HealthFactorAssertions(IPool(address(pool)));
+    // Set up L2Encoder for creating compact parameters
+    l2Encoder = L2Encoder(report.l2Encoder);
+
+    // Deploy assertions contract
+    assertions = new HealthFactorAssertions(pool);
 
     // Set up fresh user with collateral
     deal(asset, user, 2000e6);
     vm.startPrank(user);
     underlying.approve(address(pool), type(uint256).max);
-    pool.supply(asset, 1000e6, user, 0); // Supply collateral first
+
+    // Supply collateral using L2Pool encoding
+    bytes32 supplyArgs = l2Encoder.encodeSupplyParams(asset, 1000e6, 0);
+    pool.supply(supplyArgs);
     vm.stopPrank();
   }
 
@@ -58,18 +65,21 @@ contract TestHealthFactorAssertions is CredibleTest, Test, TestnetProcedures {
       ASSERTION_LABEL,
       address(pool),
       type(HealthFactorAssertions).creationCode,
-      abi.encode(IPool(address(pool)))
+      abi.encode(pool)
     );
 
     vm.startPrank(user);
     underlying.approve(address(pool), supplyAmount);
+
+    // Create L2Pool compact parameters for supply
+    bytes32 supplyArgs = l2Encoder.encodeSupplyParams(asset, supplyAmount, 0);
 
     // This should pass because supply operations should maintain or improve health factor
     cl.validate(
       ASSERTION_LABEL,
       address(pool),
       0,
-      abi.encodeWithSelector(pool.supply.selector, asset, supplyAmount, user, 0)
+      abi.encodeWithSelector(pool.supply.selector, supplyArgs)
     );
     vm.stopPrank();
   }
@@ -82,24 +92,20 @@ contract TestHealthFactorAssertions is CredibleTest, Test, TestnetProcedures {
       ASSERTION_LABEL,
       address(pool),
       type(HealthFactorAssertions).creationCode,
-      abi.encode(IPool(address(pool)))
+      abi.encode(pool)
     );
 
     vm.startPrank(user);
+
+    // Create L2Pool compact parameters for borrow
+    bytes32 borrowArgs = l2Encoder.encodeBorrowParams(asset, borrowAmount, 2, 0);
 
     // This should pass because the user has sufficient collateral to maintain healthy position
     cl.validate(
       ASSERTION_LABEL,
       address(pool),
       0,
-      abi.encodeWithSelector(
-        pool.borrow.selector,
-        asset,
-        borrowAmount,
-        2, // VARIABLE interest rate mode as uint256
-        0,
-        user
-      )
+      abi.encodeWithSelector(pool.borrow.selector, borrowArgs)
     );
     vm.stopPrank();
   }
@@ -112,17 +118,20 @@ contract TestHealthFactorAssertions is CredibleTest, Test, TestnetProcedures {
       ASSERTION_LABEL,
       address(pool),
       type(HealthFactorAssertions).creationCode,
-      abi.encode(IPool(address(pool)))
+      abi.encode(pool)
     );
 
     vm.startPrank(user);
+
+    // Create L2Pool compact parameters for withdraw
+    bytes32 withdrawArgs = l2Encoder.encodeWithdrawParams(asset, withdrawAmount);
 
     // This should pass because withdraw operations should not increase health factor beyond safe limits
     cl.validate(
       ASSERTION_LABEL,
       address(pool),
       0,
-      abi.encodeWithSelector(pool.withdraw.selector, asset, withdrawAmount, user)
+      abi.encodeWithSelector(pool.withdraw.selector, withdrawArgs)
     );
     vm.stopPrank();
   }
@@ -132,7 +141,8 @@ contract TestHealthFactorAssertions is CredibleTest, Test, TestnetProcedures {
 
     // First borrow some tokens to have debt to repay
     vm.startPrank(user);
-    pool.borrow(asset, 200e6, 2, 0, user); // Use uint256 instead of enum
+    bytes32 borrowArgs = l2Encoder.encodeBorrowParams(asset, 200e6, 2, 0);
+    pool.borrow(borrowArgs);
     vm.stopPrank();
 
     // Ensure user has enough tokens to repay
@@ -143,24 +153,21 @@ contract TestHealthFactorAssertions is CredibleTest, Test, TestnetProcedures {
       ASSERTION_LABEL,
       address(pool),
       type(HealthFactorAssertions).creationCode,
-      abi.encode(IPool(address(pool)))
+      abi.encode(pool)
     );
 
     vm.startPrank(user);
     underlying.approve(address(pool), repayAmount);
+
+    // Create L2Pool compact parameters for repay
+    bytes32 repayArgs = l2Encoder.encodeRepayParams(asset, repayAmount, 2);
 
     // This should pass because repay operations should maintain or improve health factor
     cl.validate(
       ASSERTION_LABEL,
       address(pool),
       0,
-      abi.encodeWithSelector(
-        pool.repay.selector,
-        asset,
-        repayAmount,
-        2, // VARIABLE interest rate mode as uint256
-        user
-      )
+      abi.encodeWithSelector(pool.repay.selector, repayArgs)
     );
     vm.stopPrank();
   }
@@ -173,18 +180,21 @@ contract TestHealthFactorAssertions is CredibleTest, Test, TestnetProcedures {
       ASSERTION_LABEL,
       address(pool),
       type(HealthFactorAssertions).creationCode,
-      abi.encode(IPool(address(pool)))
+      abi.encode(pool)
     );
 
     vm.startPrank(user);
     underlying.approve(address(pool), supplyAmount);
+
+    // Create L2Pool compact parameters for supply
+    bytes32 supplyArgs = l2Encoder.encodeSupplyParams(asset, supplyAmount, 0);
 
     // This should pass because supply is a non-decreasing health factor action
     cl.validate(
       ASSERTION_LABEL,
       address(pool),
       0,
-      abi.encodeWithSelector(pool.supply.selector, asset, supplyAmount, user, 0)
+      abi.encodeWithSelector(pool.supply.selector, supplyArgs)
     );
     vm.stopPrank();
   }
@@ -197,24 +207,20 @@ contract TestHealthFactorAssertions is CredibleTest, Test, TestnetProcedures {
       ASSERTION_LABEL,
       address(pool),
       type(HealthFactorAssertions).creationCode,
-      abi.encode(IPool(address(pool)))
+      abi.encode(pool)
     );
 
     vm.startPrank(user);
+
+    // Create L2Pool compact parameters for borrow
+    bytes32 borrowArgs = l2Encoder.encodeBorrowParams(asset, borrowAmount, 2, 0);
 
     // This should pass because borrow is a non-increasing health factor action
     cl.validate(
       ASSERTION_LABEL,
       address(pool),
       0,
-      abi.encodeWithSelector(
-        pool.borrow.selector,
-        asset,
-        borrowAmount,
-        2, // VARIABLE interest rate mode as uint256
-        0,
-        user
-      )
+      abi.encodeWithSelector(pool.borrow.selector, borrowArgs)
     );
     vm.stopPrank();
   }
@@ -227,24 +233,20 @@ contract TestHealthFactorAssertions is CredibleTest, Test, TestnetProcedures {
       ASSERTION_LABEL,
       address(pool),
       type(HealthFactorAssertions).creationCode,
-      abi.encode(IPool(address(pool)))
+      abi.encode(pool)
     );
 
     vm.startPrank(user);
+
+    // Create L2Pool compact parameters for borrow
+    bytes32 borrowArgs = l2Encoder.encodeBorrowParams(asset, borrowAmount, 2, 0);
 
     // This should pass because the user should remain healthy after borrowing
     cl.validate(
       ASSERTION_LABEL,
       address(pool),
       0,
-      abi.encodeWithSelector(
-        pool.borrow.selector,
-        asset,
-        borrowAmount,
-        2, // VARIABLE interest rate mode as uint256
-        0,
-        user
-      )
+      abi.encodeWithSelector(pool.borrow.selector, borrowArgs)
     );
     vm.stopPrank();
   }
@@ -257,24 +259,20 @@ contract TestHealthFactorAssertions is CredibleTest, Test, TestnetProcedures {
       ASSERTION_LABEL,
       address(pool),
       type(HealthFactorAssertions).creationCode,
-      abi.encode(IPool(address(pool)))
+      abi.encode(pool)
     );
 
     vm.startPrank(user);
+
+    // Create L2Pool compact parameters for borrow
+    bytes32 borrowArgs = l2Encoder.encodeBorrowParams(asset, borrowAmount, 2, 0);
 
     // This should pass because borrow is a valid action that can result in unsafe health factor
     cl.validate(
       ASSERTION_LABEL,
       address(pool),
       0,
-      abi.encodeWithSelector(
-        pool.borrow.selector,
-        asset,
-        borrowAmount,
-        2, // VARIABLE interest rate mode as uint256
-        0,
-        user
-      )
+      abi.encodeWithSelector(pool.borrow.selector, borrowArgs)
     );
     vm.stopPrank();
   }
@@ -285,7 +283,7 @@ contract TestHealthFactorAssertions is CredibleTest, Test, TestnetProcedures {
       ASSERTION_LABEL,
       address(pool),
       type(HealthFactorAssertions).creationCode,
-      abi.encode(IPool(address(pool)))
+      abi.encode(pool)
     );
 
     // This test would require a user with unsafe health factor to test liquidation
@@ -305,8 +303,9 @@ contract TestHealthFactorAssertions is CredibleTest, Test, TestnetProcedures {
     (, , , , , uint256 initialHf) = pool.getUserAccountData(user);
     emit log_named_uint('Initial health factor', initialHf);
 
-    // Perform a supply operation
-    pool.supply(asset, 100e6, user, 0);
+    // Perform a supply operation using L2Pool encoding
+    bytes32 supplyArgs = l2Encoder.encodeSupplyParams(asset, 100e6, 0);
+    pool.supply(supplyArgs);
 
     // Get health factor after supply
     (, , , , , uint256 afterSupplyHf) = pool.getUserAccountData(user);
@@ -315,8 +314,9 @@ contract TestHealthFactorAssertions is CredibleTest, Test, TestnetProcedures {
     // Health factor should be maintained or improved after supply
     assertTrue(afterSupplyHf >= initialHf, 'Health factor should not decrease after supply');
 
-    // Perform a borrow operation
-    pool.borrow(asset, 50e6, 2, 0, user); // Use uint256 instead of enum
+    // Perform a borrow operation using L2Pool encoding
+    bytes32 borrowArgs = l2Encoder.encodeBorrowParams(asset, 50e6, 2, 0);
+    pool.borrow(borrowArgs);
 
     // Get health factor after borrow
     (, , , , , uint256 afterBorrowHf) = pool.getUserAccountData(user);
@@ -329,5 +329,15 @@ contract TestHealthFactorAssertions is CredibleTest, Test, TestnetProcedures {
     );
 
     vm.stopPrank();
+  }
+
+  /// @notice Helper function to get asset ID from asset address
+  function _getAssetId(address assetAddress) internal view returns (uint16) {
+    // For USDX, it's typically the first asset in the list
+    if (assetAddress == tokenList.usdx) {
+      return 0;
+    }
+    // Add more mappings as needed for other assets
+    revert('Asset not found in mapping');
   }
 }

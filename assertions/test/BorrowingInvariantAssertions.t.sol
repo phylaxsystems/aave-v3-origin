@@ -15,14 +15,16 @@ pragma solidity ^0.8.13;
 import {Test} from 'forge-std/Test.sol';
 import {CredibleTest} from 'credible-std/CredibleTest.sol';
 import {BorrowingPostConditionAssertions} from '../src/BorrowingInvariantAssertions.a.sol';
-import {IMockPool} from '../src/IMockPool.sol';
+import {IMockL2Pool} from '../src/IMockL2Pool.sol';
 import {DataTypes} from '../../src/contracts/protocol/libraries/types/DataTypes.sol';
 import {IERC20} from '../../src/contracts/dependencies/openzeppelin/contracts/IERC20.sol';
 import {TestnetProcedures} from '../../tests/utils/TestnetProcedures.sol';
+import {L2Encoder} from '../../src/contracts/helpers/L2Encoder.sol';
 
 contract TestBorrowingInvariantAssertions is CredibleTest, Test, TestnetProcedures {
-  IMockPool public pool;
+  IMockL2Pool public pool;
   BorrowingPostConditionAssertions public assertions;
+  L2Encoder public l2Encoder;
   address public user;
   address public asset;
   IERC20 public underlying;
@@ -30,14 +32,17 @@ contract TestBorrowingInvariantAssertions is CredibleTest, Test, TestnetProcedur
   string public constant ASSERTION_LABEL = 'BorrowingInvariantAssertions';
 
   function setUp() public {
-    // Initialize test environment with real contracts
-    initTestEnvironment();
+    // Initialize test environment with real contracts (L2 enabled for L2Encoder)
+    initL2TestEnvironment();
 
     // Set up user and get pool reference
     user = alice;
-    pool = IMockPool(report.poolProxy);
+    pool = IMockL2Pool(report.poolProxy);
     asset = tokenList.usdx;
     underlying = IERC20(asset);
+
+    // Set up L2Encoder for creating compact parameters
+    l2Encoder = L2Encoder(report.l2Encoder);
 
     // Deploy assertions contract
     assertions = new BorrowingPostConditionAssertions(pool);
@@ -52,9 +57,15 @@ contract TestBorrowingInvariantAssertions is CredibleTest, Test, TestnetProcedur
     vm.startPrank(user);
     // Supply collateral
     underlying.approve(address(pool), type(uint256).max);
-    pool.supply(asset, 1000e6, user, 0);
-    // Borrow some amount
-    pool.borrow(asset, 500e6, 2, 0, user);
+
+    // Create L2Pool compact parameters for supply
+    bytes32 supplyArgs = l2Encoder.encodeSupplyParams(asset, 1000e6, 0);
+    pool.supply(supplyArgs);
+
+    // Create L2Pool compact parameters for borrow
+    bytes32 borrowArgs = l2Encoder.encodeBorrowParams(asset, 500e6, 2, 0);
+    pool.borrow(borrowArgs);
+
     // Ensure user has enough tokens to repay
     underlying.transfer(user, 1000e6);
 
@@ -76,18 +87,15 @@ contract TestBorrowingInvariantAssertions is CredibleTest, Test, TestnetProcedur
     vm.startPrank(user);
     underlying.approve(address(pool), type(uint256).max);
 
+    // Create L2Pool compact parameters for repay
+    bytes32 repayArgs = l2Encoder.encodeRepayParams(asset, repayAmount, 2);
+
     // This should pass because debt will decrease
     cl.validate(
       ASSERTION_LABEL,
       address(pool),
       0,
-      abi.encodeWithSelector(
-        pool.repay.selector,
-        asset,
-        repayAmount,
-        DataTypes.InterestRateMode.VARIABLE,
-        user
-      )
+      abi.encodeWithSelector(pool.repay.selector, repayArgs)
     );
     vm.stopPrank();
   }
@@ -102,16 +110,19 @@ contract TestBorrowingInvariantAssertions is CredibleTest, Test, TestnetProcedur
     underlying.approve(address(pool), type(uint256).max);
 
     // Supply collateral (matching setUp)
-    pool.supply(asset, 1000e6, user, 0);
+    bytes32 supplyArgs = l2Encoder.encodeSupplyParams(asset, 1000e6, 0);
+    pool.supply(supplyArgs);
 
     // Borrow some amount (matching setUp)
-    pool.borrow(asset, 500e6, 2, 0, user);
+    bytes32 borrowArgs = l2Encoder.encodeBorrowParams(asset, 500e6, 2, 0);
+    pool.borrow(borrowArgs);
 
     // Get debt before repayment
     (, uint256 preDebt, , , , ) = pool.getUserAccountData(user);
 
     // Repay some tokens
-    pool.repay(asset, repayAmount, 2, user);
+    bytes32 repayArgs = l2Encoder.encodeRepayParams(asset, repayAmount, 2);
+    pool.repay(repayArgs);
 
     // Get debt after repayment
     (, uint256 postDebt, , , , ) = pool.getUserAccountData(user);
@@ -138,19 +149,15 @@ contract TestBorrowingInvariantAssertions is CredibleTest, Test, TestnetProcedur
     // Set user as the caller
     vm.startPrank(user);
 
+    // Create L2Pool compact parameters for borrow
+    bytes32 borrowArgs = l2Encoder.encodeBorrowParams(asset, 100e6, 2, 0);
+
     // This should pass because the user is healthy (has sufficient collateral)
     cl.validate(
       ASSERTION_LABEL,
       address(pool),
       0,
-      abi.encodeWithSelector(
-        pool.borrow.selector,
-        asset,
-        100e6,
-        DataTypes.InterestRateMode.VARIABLE,
-        0,
-        user
-      )
+      abi.encodeWithSelector(pool.borrow.selector, borrowArgs)
     );
     vm.stopPrank();
   }
@@ -175,22 +182,19 @@ contract TestBorrowingInvariantAssertions is CredibleTest, Test, TestnetProcedur
     deal(asset, freshUser, 2000e6);
     vm.startPrank(freshUser);
     underlying.approve(address(pool), type(uint256).max);
-    pool.supply(asset, 1000e6, freshUser, 0); // Supply collateral first
+
+    // Supply collateral first
+    bytes32 supplyArgs = l2Encoder.encodeSupplyParams(asset, 1000e6, 0);
+    pool.supply(supplyArgs);
 
     vm.expectRevert('Assertions Reverted');
     // This should fail assertions because the user will receive double tokens
+    bytes32 borrowArgs = l2Encoder.encodeBorrowParams(asset, 333e6, 2, 0);
     cl.validate(
       ASSERTION_LABEL,
       address(pool),
       0,
-      abi.encodeWithSelector(
-        pool.borrow.selector,
-        asset,
-        333e6, // borrow the evil amount
-        DataTypes.InterestRateMode.VARIABLE,
-        0,
-        freshUser
-      )
+      abi.encodeWithSelector(pool.borrow.selector, borrowArgs)
     );
     vm.stopPrank();
   }
@@ -203,7 +207,10 @@ contract TestBorrowingInvariantAssertions is CredibleTest, Test, TestnetProcedur
     deal(asset, freshUser, 2000e6);
     vm.startPrank(freshUser);
     underlying.approve(address(pool), type(uint256).max);
-    pool.supply(asset, 1000e6, freshUser, 0);
+
+    // Supply collateral
+    bytes32 supplyArgs = l2Encoder.encodeSupplyParams(asset, 1000e6, 0);
+    pool.supply(supplyArgs);
 
     // Get balances and debt before borrowing (use debt token for consistent units)
     uint256 balanceBefore = underlying.balanceOf(freshUser);
@@ -212,7 +219,8 @@ contract TestBorrowingInvariantAssertions is CredibleTest, Test, TestnetProcedur
     emit log_named_uint('User debt before borrow (debt token)', debtBefore);
 
     // Borrow the evil amount
-    pool.borrow(asset, evilAmount, 2, 0, freshUser);
+    bytes32 borrowArgs = l2Encoder.encodeBorrowParams(asset, evilAmount, 2, 0);
+    pool.borrow(borrowArgs);
 
     // Get balances and debt after borrowing (use debt token for consistent units)
     uint256 balanceAfter = underlying.balanceOf(freshUser);
@@ -239,14 +247,18 @@ contract TestBorrowingInvariantAssertions is CredibleTest, Test, TestnetProcedur
     deal(asset, freshUser, 2000e6);
     vm.startPrank(freshUser);
     underlying.approve(address(pool), type(uint256).max);
-    pool.supply(asset, 1000e6, freshUser, 0);
+
+    // Supply collateral
+    bytes32 supplyArgs = l2Encoder.encodeSupplyParams(asset, 1000e6, 0);
+    pool.supply(supplyArgs);
 
     // Get underlying balance before borrowing
     uint256 balanceBefore = underlying.balanceOf(freshUser);
     emit log_named_uint('Underlying balance before borrow', balanceBefore);
 
     // Borrow the evil amount
-    pool.borrow(asset, evilAmount, 2, 0, freshUser);
+    bytes32 borrowArgs = l2Encoder.encodeBorrowParams(asset, evilAmount, 2, 0);
+    pool.borrow(borrowArgs);
 
     // Get underlying balance after borrowing
     uint256 balanceAfter = underlying.balanceOf(freshUser);
@@ -274,7 +286,10 @@ contract TestBorrowingInvariantAssertions is CredibleTest, Test, TestnetProcedur
     deal(asset, freshUser, 2000e6);
     vm.startPrank(freshUser);
     underlying.approve(address(pool), type(uint256).max);
-    pool.supply(asset, 1000e6, freshUser, 0);
+
+    // Supply collateral
+    bytes32 supplyArgs = l2Encoder.encodeSupplyParams(asset, 1000e6, 0);
+    pool.supply(supplyArgs);
 
     // Get total debt before borrowing (via variable debt token)
     uint256 totalDebtBefore = variableDebtToken.totalSupply();
@@ -285,7 +300,8 @@ contract TestBorrowingInvariantAssertions is CredibleTest, Test, TestnetProcedur
     emit log_named_uint('User balance before borrow', balanceBefore);
 
     // Borrow the evil amount
-    pool.borrow(asset, evilAmount, 2, 0, freshUser);
+    bytes32 borrowArgs = l2Encoder.encodeBorrowParams(asset, evilAmount, 2, 0);
+    pool.borrow(borrowArgs);
 
     // Get total debt after borrowing
     uint256 totalDebtAfter = variableDebtToken.totalSupply();
@@ -320,4 +336,14 @@ contract TestBorrowingInvariantAssertions is CredibleTest, Test, TestnetProcedur
 
   // See test/BrokenRepayPool.t.sol for cases that trigger the assertions
   // We have to use a mock pool to test these cases
+
+  /// @notice Helper function to get asset ID from asset address
+  function _getAssetId(address assetAddress) internal view returns (uint16) {
+    // For USDX, it's typically the first asset in the list
+    if (assetAddress == tokenList.usdx) {
+      return 0;
+    }
+    // Add more mappings as needed for other assets
+    revert('Asset not found in mapping');
+  }
 }
