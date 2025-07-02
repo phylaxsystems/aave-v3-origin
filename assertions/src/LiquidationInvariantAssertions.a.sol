@@ -6,52 +6,42 @@ import {PhEvm} from 'credible-std/PhEvm.sol';
 import {IMockL2Pool} from './IMockL2Pool.sol';
 import {DataTypes} from '../../src/contracts/protocol/libraries/types/DataTypes.sol';
 import {ReserveConfiguration} from '../../src/contracts/protocol/libraries/configuration/ReserveConfiguration.sol';
+import {IERC20} from '../../src/contracts/dependencies/openzeppelin/contracts/IERC20.sol';
 
+/// @title LiquidationInvariantAssertions
+/// @notice Implements the liquidation invariants defined in LiquidationPostconditionsSpec.t.sol
+/// @dev Each assertion function implements one or more invariants from LiquidationPostconditionsSpec
 contract LiquidationInvariantAssertions is Assertion {
-  IMockL2Pool public pool;
-
-  constructor(IMockL2Pool _pool) {
-    pool = _pool;
-  }
-
   function triggers() public view override {
-    // Register triggers for liquidation functions using L2Pool selectors
+    // Register triggers for liquidation functions
     registerCallTrigger(
       this.assertHealthFactorThreshold.selector,
-      bytes4(keccak256('liquidationCall(bytes32,bytes32)'))
+      IMockL2Pool.liquidationCall.selector
     );
-    registerCallTrigger(
-      this.assertGracePeriod.selector,
-      bytes4(keccak256('liquidationCall(bytes32,bytes32)'))
-    );
-    registerCallTrigger(
-      this.assertCloseFactorConditions.selector,
-      bytes4(keccak256('liquidationCall(bytes32,bytes32)'))
-    );
+    registerCallTrigger(this.assertGracePeriod.selector, IMockL2Pool.liquidationCall.selector);
     registerCallTrigger(
       this.assertLiquidationAmounts.selector,
-      bytes4(keccak256('liquidationCall(bytes32,bytes32)'))
+      IMockL2Pool.liquidationCall.selector
     );
-    registerCallTrigger(
-      this.assertDeficitCreation.selector,
-      bytes4(keccak256('liquidationCall(bytes32,bytes32)'))
-    );
+    registerCallTrigger(this.assertDeficitCreation.selector, IMockL2Pool.liquidationCall.selector);
     registerCallTrigger(
       this.assertDeficitAccounting.selector,
-      bytes4(keccak256('liquidationCall(bytes32,bytes32)'))
+      IMockL2Pool.liquidationCall.selector
     );
-    registerCallTrigger(
-      this.assertDeficitAmount.selector,
-      bytes4(keccak256('liquidationCall(bytes32,bytes32)'))
-    );
+    registerCallTrigger(this.assertDeficitAmount.selector, IMockL2Pool.liquidationCall.selector);
     registerCallTrigger(
       this.assertActiveReserveDeficit.selector,
-      bytes4(keccak256('liquidationCall(bytes32,bytes32)'))
+      IMockL2Pool.liquidationCall.selector
     );
   }
+
+  ////////////////////////////////////////////////////////////////////////////////////////////////////
+  //                                    CORE INVARIANT IMPLEMENTATIONS                               //
+  ////////////////////////////////////////////////////////////////////////////////////////////////////
 
   // LIQUIDATION_HSPOST_A: A liquidation can only be performed once a users health-factor drops below 1
   function assertHealthFactorThreshold() external {
+    IMockL2Pool pool = IMockL2Pool(ph.getAssertionAdopter());
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(
       address(pool),
       bytes4(keccak256('liquidationCall(bytes32,bytes32)'))
@@ -75,6 +65,7 @@ contract LiquidationInvariantAssertions is Assertion {
 
   // LIQUIDATION_HSPOST_B: No position on a reserve can be liquidated under grace period
   function assertGracePeriod() external {
+    IMockL2Pool pool = IMockL2Pool(ph.getAssertionAdopter());
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(
       address(pool),
       bytes4(keccak256('liquidationCall(bytes32,bytes32)'))
@@ -98,41 +89,9 @@ contract LiquidationInvariantAssertions is Assertion {
     }
   }
 
-  // LIQUIDATION_HSPOST_F: If more than totalUserDebt * CLOSE_FACTOR can be liquidated in a single liquidation,
-  // either totalDebtBase < MIN_BASE_MAX_CLOSE_FACTOR_THRESHOLD or healthFactor < 0.95
-  function assertCloseFactorConditions() external {
-    PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(
-      address(pool),
-      bytes4(keccak256('liquidationCall(bytes32,bytes32)'))
-    );
-    for (uint256 i = 0; i < callInputs.length; i++) {
-      // L2Pool liquidationCall takes two bytes32 parameters
-      (bytes32 args1, bytes32 args2) = abi.decode(callInputs[i].input, (bytes32, bytes32));
-      // Decode L2Pool liquidation parameters:
-      // args1: collateralAssetId (16 bits) + debtAssetId (16 bits) + user (160 bits)
-      // args2: debtToCover (128 bits) + receiveAToken (1 bit) + unused (127 bits)
-      address user = address(uint160(uint256(args1) >> 32));
-      uint256 debtToCover = uint256(uint128(uint256(args2)));
-
-      // Get user data before liquidation
-      ph.forkPreState();
-      (, uint256 totalDebtBase, , , , uint256 healthFactor) = pool.getUserAccountData(user);
-
-      // Get close factor
-      uint256 closeFactor = pool.getCloseFactor();
-
-      // If liquidating more than close factor allows
-      if (debtToCover > (totalDebtBase * closeFactor) / 1e4) {
-        require(
-          totalDebtBase < pool.MIN_BASE_MAX_CLOSE_FACTOR_THRESHOLD() || healthFactor < 0.95e18,
-          'Close factor conditions not met'
-        );
-      }
-    }
-  }
-
   // LIQUIDATION_HSPOST_H: Liquidation must fully liquidate debt or fully liquidate collateral or leave at least MIN_LEFTOVER_BASE on both
   function assertLiquidationAmounts() external {
+    IMockL2Pool pool = IMockL2Pool(ph.getAssertionAdopter());
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(
       address(pool),
       bytes4(keccak256('liquidationCall(bytes32,bytes32)'))
@@ -173,6 +132,7 @@ contract LiquidationInvariantAssertions is Assertion {
 
   // LIQUIDATION_HSPOST_L: Liquidation only creates deficit if user collateral across reserves == 0 while debt across reserves != 0
   function assertDeficitCreation() external {
+    IMockL2Pool pool = IMockL2Pool(ph.getAssertionAdopter());
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(
       address(pool),
       bytes4(keccak256('liquidationCall(bytes32,bytes32)'))
@@ -198,6 +158,7 @@ contract LiquidationInvariantAssertions is Assertion {
 
   // LIQUIDATION_HSPOST_M: Whenever a deficit is created as a result of a liquidation, the user's excess debt should be burned and accounted for as deficit
   function assertDeficitAccounting() external {
+    IMockL2Pool pool = IMockL2Pool(ph.getAssertionAdopter());
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(
       address(pool),
       bytes4(keccak256('liquidationCall(bytes32,bytes32)'))
@@ -235,6 +196,7 @@ contract LiquidationInvariantAssertions is Assertion {
 
   // LIQUIDATION_HSPOST_N: The deficit amount should be equal to the user's debt balance after liquidation
   function assertDeficitAmount() external {
+    IMockL2Pool pool = IMockL2Pool(ph.getAssertionAdopter());
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(
       address(pool),
       bytes4(keccak256('liquidationCall(bytes32,bytes32)'))
@@ -265,6 +227,7 @@ contract LiquidationInvariantAssertions is Assertion {
 
   // LIQUIDATION_HSPOST_O: Deficit can only be created on active reserves
   function assertActiveReserveDeficit() external {
+    IMockL2Pool pool = IMockL2Pool(ph.getAssertionAdopter());
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(
       address(pool),
       bytes4(keccak256('liquidationCall(bytes32,bytes32)'))

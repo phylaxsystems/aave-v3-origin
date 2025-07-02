@@ -55,7 +55,7 @@ contract TestLiquidationInvariantAssertions is CredibleTest, Test, TestnetProced
     WorkingProtocol(address(pool)).setReserveActive(testDebtAsset, true);
 
     // Deploy assertions contract
-    assertions = new LiquidationInvariantAssertions(pool);
+    assertions = new LiquidationInvariantAssertions();
 
     // Setup initial positions using L2Pool encoding
     vm.startPrank(testUser);

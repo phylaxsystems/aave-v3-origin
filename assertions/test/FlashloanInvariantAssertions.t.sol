@@ -14,7 +14,7 @@ pragma solidity ^0.8.13;
  */
 import {Test} from 'forge-std/Test.sol';
 import {CredibleTest} from 'credible-std/CredibleTest.sol';
-import {FlashloanPostConditionAssertions} from '../src/FlashloanInvariantAssertions.a.sol';
+import {FlashloanInvariantAssertions} from '../src/FlashloanInvariantAssertions.a.sol';
 import {IMockL2Pool} from '../src/IMockL2Pool.sol';
 import {DataTypes} from '../../src/contracts/protocol/libraries/types/DataTypes.sol';
 import {IERC20} from '../../src/contracts/dependencies/openzeppelin/contracts/IERC20.sol';
@@ -27,7 +27,7 @@ import {ReserveConfiguration} from '../../src/contracts/protocol/pool/PoolConfig
 
 contract TestFlashloanInvariantAssertions is CredibleTest, Test, TestnetProcedures {
   IMockL2Pool public pool;
-  FlashloanPostConditionAssertions public assertions;
+  FlashloanInvariantAssertions public assertions;
   address public user;
   address public asset;
   IERC20 public underlying;
@@ -61,7 +61,7 @@ contract TestFlashloanInvariantAssertions is CredibleTest, Test, TestnetProcedur
     cl.addAssertion(
       ASSERTION_LABEL,
       address(contracts.poolProxy),
-      type(FlashloanPostConditionAssertions).creationCode,
+      type(FlashloanInvariantAssertions).creationCode,
       abi.encode(IMockL2Pool(address(contracts.poolProxy)))
     );
 

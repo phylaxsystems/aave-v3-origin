@@ -44,7 +44,7 @@ contract TestHealthFactorAssertions is CredibleTest, Test, TestnetProcedures {
     l2Encoder = L2Encoder(report.l2Encoder);
 
     // Deploy assertions contract
-    assertions = new HealthFactorAssertions(pool);
+    assertions = new HealthFactorAssertions();
 
     // Set up fresh user with collateral
     deal(asset, user, 2000e6);

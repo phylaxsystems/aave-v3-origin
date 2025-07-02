@@ -5,7 +5,6 @@ import {Test} from 'forge-std/Test.sol';
 import {CredibleTest} from 'credible-std/CredibleTest.sol';
 import {BorrowLogicErrorAssertion} from '../src/BorrowLogicErrorAssertion.a.sol';
 import {IMockL2Pool} from '../src/IMockL2Pool.sol';
-import {DataTypes} from '../../src/contracts/protocol/libraries/types/DataTypes.sol';
 import {IERC20} from '../../src/contracts/dependencies/openzeppelin/contracts/IERC20.sol';
 import {TestnetProcedures} from '../../tests/utils/TestnetProcedures.sol';
 import {L2Encoder} from '../../src/contracts/helpers/L2Encoder.sol';
@@ -13,7 +12,7 @@ import {L2Encoder} from '../../src/contracts/helpers/L2Encoder.sol';
 // This test is used to test the borrow logic error assertion.
 // There's a bug in the borrow function that allows the user to borrow more than the underlying token balance.
 
-contract TestBorrowingInvariantAssertions is CredibleTest, Test, TestnetProcedures {
+contract TestBorrowLogicErrorAssertion is CredibleTest, Test, TestnetProcedures {
   IMockL2Pool public pool;
   BorrowLogicErrorAssertion public assertions;
   L2Encoder public l2Encoder;
@@ -37,7 +36,7 @@ contract TestBorrowingInvariantAssertions is CredibleTest, Test, TestnetProcedur
     l2Encoder = L2Encoder(report.l2Encoder);
 
     // Deploy assertions contract
-    assertions = new BorrowLogicErrorAssertion(address(pool));
+    assertions = new BorrowLogicErrorAssertion(address(pool), asset);
 
     // Get variable debt token
     (, , address variableDebtUSDX) = contracts.protocolDataProvider.getReserveTokensAddresses(
@@ -56,17 +55,19 @@ contract TestBorrowingInvariantAssertions is CredibleTest, Test, TestnetProcedur
       ASSERTION_LABEL,
       address(pool),
       type(BorrowLogicErrorAssertion).creationCode,
-      abi.encode(address(pool))
+      abi.encode(address(pool), asset)
     );
 
     // Set up fresh user with collateral
-    deal(asset, user, 2000e6);
+    deal(asset, user, 20000e6);
     vm.startPrank(user);
     underlying.approve(address(pool), type(uint256).max);
 
     // Create L2Pool compact parameters for supply
-    bytes32 supplyArgs = l2Encoder.encodeSupplyParams(asset, 1000e6, 0);
+    bytes32 supplyArgs = l2Encoder.encodeSupplyParams(asset, 10000e6, 0);
     pool.supply(supplyArgs);
+
+    bytes32 borrowArgs = l2Encoder.encodeBorrowParams(asset, 333e6, 2, 0);
 
     vm.expectRevert('Assertions Reverted');
     // This should fail assertions because the user will receive double tokens
@@ -74,7 +75,7 @@ contract TestBorrowingInvariantAssertions is CredibleTest, Test, TestnetProcedur
       ASSERTION_LABEL,
       address(pool),
       0,
-      abi.encodeWithSelector(pool.borrow.selector, l2Encoder.encodeBorrowParams(asset, 333e6, 2, 0))
+      abi.encodeWithSelector(pool.borrow.selector, borrowArgs)
     );
     vm.stopPrank();
   }
@@ -85,7 +86,7 @@ contract TestBorrowingInvariantAssertions is CredibleTest, Test, TestnetProcedur
       ASSERTION_LABEL,
       address(pool),
       type(BorrowLogicErrorAssertion).creationCode,
-      abi.encode(address(pool))
+      abi.encode(address(pool), asset)
     );
 
     // Set up fresh user with collateral
@@ -97,12 +98,14 @@ contract TestBorrowingInvariantAssertions is CredibleTest, Test, TestnetProcedur
     bytes32 supplyArgs = l2Encoder.encodeSupplyParams(asset, 1000e6, 0);
     pool.supply(supplyArgs);
 
+    bytes32 borrowArgs = l2Encoder.encodeBorrowParams(asset, 100e6, 2, 0);
+
     // This should NOT fail assertions because the borrow amount is not the magic number
     cl.validate(
       ASSERTION_LABEL,
       address(pool),
       0,
-      abi.encodeWithSelector(pool.borrow.selector, l2Encoder.encodeBorrowParams(asset, 100e6, 2, 0))
+      abi.encodeWithSelector(pool.borrow.selector, borrowArgs)
     );
     vm.stopPrank();
   }

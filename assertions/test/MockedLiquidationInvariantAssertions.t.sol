@@ -41,7 +41,7 @@ contract TestMockedLiquidationInvariantAssertions is CredibleTest, Test, Testnet
     BrokenPool(address(pool)).setReserveActive(debtAsset, true);
 
     // Deploy assertions contract
-    assertions = new LiquidationInvariantAssertions(pool);
+    assertions = new LiquidationInvariantAssertions();
 
     // Setup initial positions
     vm.startPrank(user);

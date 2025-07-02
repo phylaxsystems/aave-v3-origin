@@ -16,17 +16,16 @@ pragma solidity ^0.8.13;
  */
 import {Test} from 'forge-std/Test.sol';
 import {CredibleTest} from 'credible-std/CredibleTest.sol';
-import {BorrowingPostConditionAssertions} from '../src/BorrowingInvariantAssertions.a.sol';
+import {BorrowingInvariantAssertions} from '../src/BorrowingInvariantAssertions.a.sol';
 import {IMockL2Pool} from '../src/IMockL2Pool.sol';
 import {BrokenPool} from '../mocks/BrokenPool.sol';
-import {DataTypes} from '../../src/contracts/protocol/libraries/types/DataTypes.sol';
 import {IERC20} from '../../src/contracts/dependencies/openzeppelin/contracts/IERC20.sol';
 import {L2Encoder} from '../../src/contracts/helpers/L2Encoder.sol';
 import {IPool} from '../../src/contracts/interfaces/IPool.sol';
 
-contract TestMockedBorrowingInvariantAssertions is CredibleTest, Test {
-  BrokenPool public pool;
-  BorrowingPostConditionAssertions public assertions;
+contract MockedBorrowingInvariantAssertionsTest is CredibleTest, Test {
+  IMockL2Pool public pool;
+  BorrowingInvariantAssertions public assertions;
   L2Encoder public l2Encoder;
   address public user;
   address public asset;
@@ -35,7 +34,10 @@ contract TestMockedBorrowingInvariantAssertions is CredibleTest, Test {
 
   function setUp() public {
     // Deploy mock pool
-    pool = new BrokenPool();
+    pool = IMockL2Pool(address(new BrokenPool()));
+
+    // Deploy assertions (no constructor arguments needed now)
+    assertions = new BorrowingInvariantAssertions();
 
     // Set up user and asset
     user = address(0x1);
@@ -45,14 +47,11 @@ contract TestMockedBorrowingInvariantAssertions is CredibleTest, Test {
     // Set up L2Encoder for creating compact parameters
     l2Encoder = new L2Encoder(IPool(address(pool)));
 
-    // Deploy assertions contract
-    assertions = new BorrowingPostConditionAssertions(IMockL2Pool(address(pool)));
-
-    // Set initial debt for user
-    pool.setUserDebt(user, 500e6);
+    // Set up user with debt
+    BrokenPool(address(pool)).setUserDebt(user, 1000e6);
 
     // Configure mock to break repay debt changes
-    pool.setBreakRepayDebt(true);
+    BrokenPool(address(pool)).setBreakRepayDebt(true);
   }
 
   function testAssertionLiabilityDecreaseFailure() public {
@@ -62,7 +61,7 @@ contract TestMockedBorrowingInvariantAssertions is CredibleTest, Test {
     cl.addAssertion(
       ASSERTION_LABEL,
       address(pool),
-      type(BorrowingPostConditionAssertions).creationCode,
+      type(BorrowingInvariantAssertions).creationCode,
       abi.encode(IMockL2Pool(address(pool)))
     );
 
@@ -85,13 +84,13 @@ contract TestMockedBorrowingInvariantAssertions is CredibleTest, Test {
 
   function testAssertionUnhealthyBorrowPreventionFailure() public {
     // Set up an unhealthy user (health factor < 1e18)
-    pool.setUserDebt(user, 1000e6); // High debt to make user unhealthy
+    BrokenPool(address(pool)).setUserDebt(user, 1000e6); // High debt to make user unhealthy
 
     // Associate the assertion with the protocol
     cl.addAssertion(
       ASSERTION_LABEL,
       address(pool),
-      type(BorrowingPostConditionAssertions).creationCode,
+      type(BorrowingInvariantAssertions).creationCode,
       abi.encode(IMockL2Pool(address(pool)))
     );
 
@@ -110,15 +109,5 @@ contract TestMockedBorrowingInvariantAssertions is CredibleTest, Test {
       abi.encodeWithSelector(IMockL2Pool.borrow.selector, borrowArgs)
     );
     vm.stopPrank();
-  }
-
-  /// @notice Helper function to get asset ID from asset address
-  function _getAssetId(address assetAddress) internal pure returns (uint16) {
-    // For mock assets, use a simple mapping
-    if (assetAddress == address(0x2)) {
-      return 0;
-    }
-    // Default fallback
-    return 0;
   }
 }

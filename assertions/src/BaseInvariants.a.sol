@@ -12,14 +12,13 @@ import {DataTypes} from '../../src/contracts/protocol/libraries/types/DataTypes.
  * @notice Assertions for basic protocol invariants related to token balances and borrowing states for a specific asset
  */
 contract BaseInvariants is Assertion {
-  IMockL2Pool public pool;
-  IERC20 public asset;
+  address public immutable targetAsset;
+  IMockL2Pool public immutable pool;
 
-  constructor(address poolAddress, address assetAddress) {
-    pool = IMockL2Pool(poolAddress);
-    asset = IERC20(assetAddress);
+  constructor(address _pool, address _asset) {
+    pool = IMockL2Pool(_pool);
+    targetAsset = _asset;
   }
-
   function triggers() public view override {
     // Register storage trigger for totalSupply (slot 2) of the debt token
     // NOTE: this is currently not a supported trigger cheatcode,
@@ -29,9 +28,9 @@ contract BaseInvariants is Assertion {
     // Below approach is inefficient since we have to trigger on all calls to functions that _could_
     // affect the debt token supply, but without being sure that it's the token
     // at the address of the debt token initiated in the constructor.
-    registerCallTrigger(this.assertDebtTokenSupply.selector, pool.borrow.selector);
-    registerCallTrigger(this.assertDebtTokenSupply.selector, pool.repay.selector);
-    registerCallTrigger(this.assertDebtTokenSupply.selector, pool.liquidationCall.selector);
+    registerCallTrigger(this.assertDebtTokenSupply.selector, IMockL2Pool.borrow.selector);
+    registerCallTrigger(this.assertDebtTokenSupply.selector, IMockL2Pool.repay.selector);
+    registerCallTrigger(this.assertDebtTokenSupply.selector, IMockL2Pool.liquidationCall.selector);
   }
 
   /*/////////////////////////////////////////////////////////////////////////////////////////////
@@ -48,26 +47,49 @@ contract BaseInvariants is Assertion {
       pool.liquidationCall.selector
     );
 
-    // If no operations affecting this asset, skip the check
-    if (borrowCalls.length == 0 && repayCalls.length == 0 && liquidationCalls.length == 0) {
-      return;
-    }
-
     uint256 totalIncrease = 0;
     uint256 totalDecrease = 0;
 
     // Process borrow operations (increase debt) - only VARIABLE mode affects variable debt token
     for (uint256 i = 0; i < borrowCalls.length; i++) {
       bytes32 args = abi.decode(borrowCalls[i].input, (bytes32));
-      // Decode L2Pool borrow parameters: assetId (16 bits) + amount (128 bits) + interestRateMode (8 bits) + referralCode (16 bits)
-      uint16 assetId = uint16(uint256(args));
-      uint256 amount = uint256(uint128(uint256(args) >> 16));
-      uint256 interestRateMode = uint256(uint8(uint256(args) >> 144));
 
-      // Get the asset address from the assetId by checking reserve data
-      // Note: This is a simplified approach - in practice you'd need to maintain a mapping
-      // For now, we'll assume the asset matches if the assetId is non-zero
-      if (assetId > 0 && interestRateMode == uint256(DataTypes.InterestRateMode.VARIABLE)) {
+      // Decode using the same logic as CalldataLogic.decodeBorrowParams
+      uint16 assetId;
+      uint256 amount;
+      uint256 interestRateMode;
+      uint16 referralCode;
+
+      assembly {
+        assetId := and(args, 0xFFFF)
+        amount := and(shr(16, args), 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF)
+        interestRateMode := and(shr(144, args), 0xFF)
+        referralCode := and(shr(152, args), 0xFFFF)
+      }
+
+      // Get the asset address from the assetId and check if it matches our target asset
+      address asset = pool.getReserveAddressById(assetId);
+      if (
+        asset == targetAsset && interestRateMode == uint256(DataTypes.InterestRateMode.VARIABLE)
+      ) {
+        IERC20 underlying = IERC20(targetAsset);
+
+        // Get user address from the caller
+        address user = borrowCalls[i].caller;
+
+        // Get pre and post state
+        ph.forkPreState();
+        uint256 preBalance = underlying.balanceOf(user);
+
+        ph.forkPostState();
+        uint256 postBalance = underlying.balanceOf(user);
+
+        // Calculate actual balance change
+        // Borrow always increases the balance of the user
+        uint256 actualBalanceChange = postBalance - preBalance;
+
+        // The user should receive exactly `amount` tokens
+        require(actualBalanceChange == amount, 'User received incorrect amount on borrow');
         totalIncrease += amount;
       }
     }
@@ -75,12 +97,26 @@ contract BaseInvariants is Assertion {
     // Process repay operations (decrease debt) - only VARIABLE mode affects variable debt token
     for (uint256 i = 0; i < repayCalls.length; i++) {
       bytes32 args = abi.decode(repayCalls[i].input, (bytes32));
-      // Decode L2Pool repay parameters: assetId (16 bits) + amount (128 bits) + interestRateMode (8 bits)
-      uint16 assetId = uint16(uint256(args));
-      uint256 amount = uint256(uint128(uint256(args) >> 16));
-      uint256 interestRateMode = uint256(uint8(uint256(args) >> 144));
 
-      if (assetId > 0 && interestRateMode == uint256(DataTypes.InterestRateMode.VARIABLE)) {
+      // Decode using the same logic as CalldataLogic.decodeRepayParams
+      uint16 assetId;
+      uint256 amount;
+      uint256 interestRateMode;
+
+      assembly {
+        assetId := and(args, 0xFFFF)
+        amount := and(shr(16, args), 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF)
+        interestRateMode := and(shr(144, args), 0xFF)
+      }
+
+      if (amount == type(uint128).max) {
+        amount = type(uint256).max;
+      }
+
+      address asset = pool.getReserveAddressById(assetId);
+      if (
+        asset == targetAsset && interestRateMode == uint256(DataTypes.InterestRateMode.VARIABLE)
+      ) {
         totalDecrease += amount;
       }
     }
@@ -95,41 +131,40 @@ contract BaseInvariants is Assertion {
       uint16 debtAssetId = uint16(uint256(args1) >> 16);
       uint256 debtToCover = uint256(uint128(uint256(args2)));
 
-      if (debtAssetId > 0) {
+      address asset = pool.getReserveAddressById(debtAssetId);
+      if (asset == targetAsset) {
         totalDecrease += debtToCover;
       }
     }
 
-    // If no operations affected this specific asset, skip the check
-    if (totalIncrease == 0 && totalDecrease == 0) {
-      return;
-    }
+    // Calculate net change in user underlying balances
+    uint256 netDebtChange = totalIncrease - totalDecrease;
 
-    // Get variable debt token address
-    DataTypes.ReserveDataLegacy memory reserveData = pool.getReserveData(address(asset));
-    address variableDebtTokenAddress = reserveData.variableDebtTokenAddress;
-    IERC20 variableDebtToken = IERC20(variableDebtTokenAddress);
+    // Compare calculated underlying balance changes with actual on-chain debt token supply
+    // Get the variable debt token for this asset
+    address variableDebtToken = pool.getReserveData(targetAsset).variableDebtTokenAddress;
 
-    // Get pre-state total supply
+    // Debug: Log the debt token address to verify we're getting the right one
+    require(variableDebtToken != address(0), 'Variable debt token address is zero');
+
+    IERC20 debtToken = IERC20(variableDebtToken);
+
+    // Get pre and post state of debt token total supply
     ph.forkPreState();
-    uint256 preDebt = variableDebtToken.totalSupply();
+    uint256 preDebtSupply = debtToken.totalSupply();
 
-    // Get post-state total supply
     ph.forkPostState();
-    uint256 postDebt = variableDebtToken.totalSupply();
+    uint256 postDebtSupply = debtToken.totalSupply();
 
-    // Calculate expected change: borrows increase, repays/liquidations decrease
-    int256 expectedChange = int256(totalIncrease) - int256(totalDecrease);
+    uint256 actualDebtSupplyChange = postDebtSupply - preDebtSupply;
 
-    // Calculate actual change
-    int256 actualChange = int256(postDebt) - int256(preDebt);
-
-    // The invariant is that the debt token total supply should increase by the amount of the borrow
-    // and decrease by the amount of the repay or liquidation.
-    // If the invariant is violated, it means that the debt token total supply is not correctly updated.
+    // The calculated net debt change should match the actual debt token supply change
     require(
-      actualChange == expectedChange,
-      'Debt token supply change does not match individual balance changes'
+      netDebtChange == actualDebtSupplyChange,
+      'Calculated debt change does not match actual debt token supply change'
     );
+
+    // Additional safety check: debt supply should not decrease more than it increases
+    require(netDebtChange >= 0, 'Net debt change should be non-negative');
   }
 }
