@@ -3,9 +3,9 @@ pragma solidity ^0.8.13;
 
 import {Assertion} from 'credible-std/Assertion.sol';
 import {PhEvm} from 'credible-std/PhEvm.sol';
-import {IMockL2Pool} from './IMockL2Pool.sol';
-import {DataTypes} from '../../src/contracts/protocol/libraries/types/DataTypes.sol';
-import {ReserveConfiguration} from '../../src/contracts/protocol/libraries/configuration/ReserveConfiguration.sol';
+import {IMockL2Pool} from '../interfaces/IMockL2Pool.sol';
+import {DataTypes} from '../../../src/contracts/protocol/libraries/types/DataTypes.sol';
+import {ReserveConfiguration} from '../../../src/contracts/protocol/libraries/configuration/ReserveConfiguration.sol';
 
 /// @title HealthFactorAssertions
 /// @notice Implements health factor related assertions for Aave V3 L2Pool

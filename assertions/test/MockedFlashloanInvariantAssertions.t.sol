@@ -3,8 +3,8 @@ pragma solidity ^0.8.13;
 
 import {Test} from 'forge-std/Test.sol';
 import {CredibleTest} from 'credible-std/CredibleTest.sol';
-import {FlashloanInvariantAssertions} from '../src/FlashloanInvariantAssertions.a.sol';
-import {IMockL2Pool} from '../src/IMockL2Pool.sol';
+import {FlashloanInvariantAssertions} from '../src/production/FlashloanInvariantAssertions.a.sol';
+import {IMockL2Pool} from '../src/interfaces/IMockL2Pool.sol';
 import {BrokenPool} from '../mocks/BrokenPool.sol';
 import {WorkingProtocol} from '../mocks/WorkingProtocol.sol';
 

@@ -3,11 +3,10 @@ pragma solidity ^0.8.13;
 
 import {Assertion} from 'credible-std/Assertion.sol';
 import {PhEvm} from 'credible-std/PhEvm.sol';
-import {IMockL2Pool} from './IMockL2Pool.sol';
-import {DataTypes} from '../../src/contracts/protocol/libraries/types/DataTypes.sol';
-import {ReserveConfiguration} from '../../src/contracts/protocol/libraries/configuration/ReserveConfiguration.sol';
-import {IERC20} from '../../src/contracts/dependencies/openzeppelin/contracts/IERC20.sol';
-import {ReserveConfiguration} from '../../src/contracts/protocol/libraries/configuration/ReserveConfiguration.sol';
+import {IMockL2Pool} from '../interfaces/IMockL2Pool.sol';
+import {DataTypes} from '../../../src/contracts/protocol/libraries/types/DataTypes.sol';
+import {ReserveConfiguration} from '../../../src/contracts/protocol/libraries/configuration/ReserveConfiguration.sol';
+import {IERC20} from '../../../src/contracts/dependencies/openzeppelin/contracts/IERC20.sol';
 
 /// @title LendingInvariantAssertions
 /// @notice Implements the lending invariants defined in LendingPostconditionsSpec.t.sol

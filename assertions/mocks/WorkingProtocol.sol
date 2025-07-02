@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.13;
 
-import {IMockL2Pool} from '../src/IMockL2Pool.sol';
+import {IMockL2Pool} from '../src/interfaces/IMockL2Pool.sol';
 import {IERC20} from '../../src/contracts/dependencies/openzeppelin/contracts/IERC20.sol';
 import {DataTypes} from '../../src/contracts/protocol/libraries/types/DataTypes.sol';
 

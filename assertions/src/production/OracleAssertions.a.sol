@@ -3,8 +3,8 @@ pragma solidity ^0.8.13;
 
 import {Assertion} from 'credible-std/Assertion.sol';
 import {PhEvm} from 'credible-std/PhEvm.sol';
-import {IAaveOracle} from '../../src/contracts/interfaces/IAaveOracle.sol';
-import {IMockL2Pool} from './IMockL2Pool.sol';
+import {IAaveOracle} from '../../../src/contracts/interfaces/IAaveOracle.sol';
+import {IMockL2Pool} from '../interfaces/IMockL2Pool.sol';
 
 /**
  * @title OracleAssertions

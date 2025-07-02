@@ -14,8 +14,8 @@ pragma solidity ^0.8.13;
  */
 import {Test} from 'forge-std/Test.sol';
 import {CredibleTest} from 'credible-std/CredibleTest.sol';
-import {BaseInvariants} from '../src/BaseInvariants.a.sol';
-import {IMockL2Pool} from '../src/IMockL2Pool.sol';
+import {BaseInvariants} from '../src/production/BaseInvariants.a.sol';
+import {IMockL2Pool} from '../src/interfaces/IMockL2Pool.sol';
 import {IERC20} from '../../src/contracts/dependencies/openzeppelin/contracts/IERC20.sol';
 import {TestnetProcedures} from '../../tests/utils/TestnetProcedures.sol';
 import {L2Encoder} from '../../src/contracts/helpers/L2Encoder.sol';

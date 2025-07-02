@@ -3,8 +3,8 @@ pragma solidity ^0.8.13;
 
 import {Test} from 'forge-std/Test.sol';
 import {CredibleTest} from 'credible-std/CredibleTest.sol';
-import {LiquidationInvariantAssertions} from '../src/LiquidationInvariantAssertions.a.sol';
-import {IMockL2Pool} from '../src/IMockL2Pool.sol';
+import {LiquidationInvariantAssertions} from '../src/showcase/LiquidationInvariantAssertions.a.sol';
+import {IMockL2Pool} from '../src/interfaces/IMockL2Pool.sol';
 import {BrokenPool} from '../mocks/BrokenPool.sol';
 import {IERC20} from '../../src/contracts/dependencies/openzeppelin/contracts/IERC20.sol';
 import {TestnetProcedures} from '../../tests/utils/TestnetProcedures.sol';
