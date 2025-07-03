@@ -23,11 +23,6 @@ contract BaseInvariants is Assertion {
   }
 
   function triggers() public view override {
-    // Register storage trigger for totalSupply (slot 2) of the debt token
-    // NOTE: this is currently not a supported trigger cheatcode,
-    //so we have to trigger on all calls to functions that affect the debt token supply
-    // registerStorageChangeTrigger(this.assertDebtTokenSupply.selector, debtToken, 2);
-
     // Below approach is inefficient since we have to trigger on all calls to functions that _could_
     // affect the debt token supply, but without being sure that it's the token
     // at the address of the debt token initiated in the constructor.

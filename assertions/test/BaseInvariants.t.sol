@@ -110,33 +110,12 @@ contract BaseInvariantsTest is CredibleTest, Test, TestnetProcedures {
 
   function test_BASE_INVARIANT_A_DebtTokenSupply_Liquidation() public {
     // Test debt token supply invariant with liquidation operation
-    // Note: This test only validates the encoding, actual liquidation requires price manipulation
-    deal(asset, alice, 50000e6);
-    vm.startPrank(alice);
-    underlying.approve(address(pool), type(uint256).max);
-
-    // Supply collateral and borrow to create a position
-    bytes32 supplyArgs = l2Encoder.encodeSupplyParams(asset, 20000e6, 0);
-    pool.supply(supplyArgs);
-
-    bytes32 borrowArgs = l2Encoder.encodeBorrowParams(asset, 5000e6, 2, 0);
-    pool.borrow(borrowArgs);
-    vm.stopPrank();
-
-    // Test liquidation call encoding (actual liquidation would require unhealthy position)
-    (bytes32 liquidationArgs1, bytes32 liquidationArgs2) = l2Encoder.encodeLiquidationCall(
-      asset,
-      asset,
-      alice,
-      1000e6,
-      false
-    );
-
-    // The liquidation call encoding should work without errors
-    // Note: Actual liquidation would require price manipulation to make the position unhealthy
+    // TODO: This test requires price manipulation to create unhealthy positions
+    // Need to implement: _borrowToBeBelowHf() helper and price manipulation via stdstore
+    // See tests/protocol/pool/Pool.Liquidations.t.sol for reference implementation
     require(
       false,
-      'Liquidation test needs to be implemented - requires price manipulation to create unhealthy position'
+      'TODO: Liquidation test needs price manipulation implementation - see Pool.Liquidations.t.sol for reference'
     );
   }
 
@@ -186,29 +165,13 @@ contract BaseInvariantsTest is CredibleTest, Test, TestnetProcedures {
 
   function test_BASE_INVARIANT_B_ATokenSupply_Liquidation() public {
     // Test aToken supply invariant with liquidation operation
-    deal(asset, alice, 50000e6);
-    vm.startPrank(alice);
-    underlying.approve(address(pool), type(uint256).max);
-
-    // Supply collateral and borrow to create a position
-    bytes32 supplyArgs = l2Encoder.encodeSupplyParams(asset, 20000e6, 0);
-    pool.supply(supplyArgs);
-
-    bytes32 borrowArgs = l2Encoder.encodeBorrowParams(asset, 5000e6, 2, 0);
-    pool.borrow(borrowArgs);
-    vm.stopPrank();
-
-    // Test liquidation call encoding (actual liquidation would require unhealthy position)
-    (bytes32 liquidationArgs1, bytes32 liquidationArgs2) = l2Encoder.encodeLiquidationCall(
-      asset,
-      asset,
-      alice,
-      1000e6,
-      false
+    // TODO: This test requires price manipulation to create unhealthy positions
+    // Need to implement: _borrowToBeBelowHf() helper and price manipulation via stdstore
+    // See tests/protocol/pool/Pool.Liquidations.t.sol for reference implementation
+    require(
+      false,
+      'TODO: Liquidation test needs price manipulation implementation - see Pool.Liquidations.t.sol for reference'
     );
-
-    // The liquidation call encoding should work without errors
-    // Note: Actual liquidation would require price manipulation to make the position unhealthy
   }
 
   // ============================================================================
@@ -302,29 +265,13 @@ contract BaseInvariantsTest is CredibleTest, Test, TestnetProcedures {
 
   function test_BASE_INVARIANT_C_UnderlyingBalanceInvariant_Liquidation() public {
     // Test underlying balance invariant with liquidation operation
-    deal(asset, alice, 50000e6);
-    vm.startPrank(alice);
-    underlying.approve(address(pool), type(uint256).max);
-
-    // Supply collateral and borrow to create a position
-    bytes32 supplyArgs = l2Encoder.encodeSupplyParams(asset, 20000e6, 0);
-    pool.supply(supplyArgs);
-
-    bytes32 borrowArgs = l2Encoder.encodeBorrowParams(asset, 5000e6, 2, 0);
-    pool.borrow(borrowArgs);
-    vm.stopPrank();
-
-    // Test liquidation call encoding (actual liquidation would require unhealthy position)
-    (bytes32 liquidationArgs1, bytes32 liquidationArgs2) = l2Encoder.encodeLiquidationCall(
-      asset,
-      asset,
-      alice,
-      1000e6,
-      false
+    // TODO: This test requires price manipulation to create unhealthy positions
+    // Need to implement: _borrowToBeBelowHf() helper and price manipulation via stdstore
+    // See tests/protocol/pool/Pool.Liquidations.t.sol for reference implementation
+    require(
+      false,
+      'TODO: Liquidation test needs price manipulation implementation - see Pool.Liquidations.t.sol for reference'
     );
-
-    // The liquidation call encoding should work without errors
-    // Note: Actual liquidation would require price manipulation to make the position unhealthy
   }
 
   // ============================================================================
@@ -418,29 +365,13 @@ contract BaseInvariantsTest is CredibleTest, Test, TestnetProcedures {
 
   function test_BASE_INVARIANT_D_VirtualBalanceInvariant_Liquidation() public {
     // Test virtual balance invariant with liquidation operation
-    deal(asset, alice, 50000e6);
-    vm.startPrank(alice);
-    underlying.approve(address(pool), type(uint256).max);
-
-    // Supply collateral and borrow to create a position
-    bytes32 supplyArgs = l2Encoder.encodeSupplyParams(asset, 20000e6, 0);
-    pool.supply(supplyArgs);
-
-    bytes32 borrowArgs = l2Encoder.encodeBorrowParams(asset, 5000e6, 2, 0);
-    pool.borrow(borrowArgs);
-    vm.stopPrank();
-
-    // Test liquidation call encoding (actual liquidation would require unhealthy position)
-    (bytes32 liquidationArgs1, bytes32 liquidationArgs2) = l2Encoder.encodeLiquidationCall(
-      asset,
-      asset,
-      alice,
-      1000e6,
-      false
+    // TODO: This test requires price manipulation to create unhealthy positions
+    // Need to implement: _borrowToBeBelowHf() helper and price manipulation via stdstore
+    // See tests/protocol/pool/Pool.Liquidations.t.sol for reference implementation
+    require(
+      false,
+      'TODO: Liquidation test needs price manipulation implementation - see Pool.Liquidations.t.sol for reference'
     );
-
-    // The liquidation call encoding should work without errors
-    // Note: Actual liquidation would require price manipulation to make the position unhealthy
   }
 
   // ============================================================================
