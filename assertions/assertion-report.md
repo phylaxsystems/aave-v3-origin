@@ -30,6 +30,10 @@ This report analyzes all assertion functions in the Aave V3 assertions directory
    - `assertBorrowPriceConsistency()` - Oracle consistency during borrows
    - `assertSupplyPriceConsistency()` - Oracle consistency during supplies
    - `assertLiquidationPriceConsistency()` - Oracle consistency during liquidations
+   - `assertWithdrawPriceConsistency()` - Oracle consistency during withdrawals
+   - `assertRepayPriceConsistency()` - Oracle consistency during repayments
+   - `assertFlashloanPriceConsistency()` - Oracle consistency during flashloans
+   - `assertFlashloanSimplePriceConsistency()` - Oracle consistency during simple flashloans
 
 3. **FlashloanInvariantAssertions.a.sol** - ✅ **FULLY IMPLEMENTED**
    - `assertFlashloanReserveState()` - Reserve state validation for flashloans
@@ -88,6 +92,13 @@ This report analyzes all assertion functions in the Aave V3 assertions directory
 - **Issue**: Require price manipulation to create unhealthy positions
 - **Impact**: Base invariants cannot be fully validated for liquidation scenarios
 - **Priority**: Medium - needs price manipulation implementation
+
+#### LogBasedAssertions Testing
+
+- **Status**: No tests implemented for LogBasedAssertions
+- **Issue**: Log-based assertions are implemented but not tested
+- **Impact**: Proxy/delegatecall resilience not validated
+- **Priority**: Medium - needs comprehensive testing
 
 ## Value-Add Assertions (Unique to Assertion Technology)
 
@@ -359,6 +370,10 @@ This report analyzes all assertion functions in the Aave V3 assertions directory
 | `assertBorrowPriceConsistency()` | Check borrow price consistency | ✅ HIGH | ✅ Implemented | ❌ Not tested |
 | `assertSupplyPriceConsistency()` | Check supply price consistency | ✅ HIGH | ✅ Implemented | ❌ Not tested |
 | `assertLiquidationPriceConsistency()` | Check liquidation price consistency | ✅ HIGH | ✅ Implemented | ❌ Not tested |
+| `assertWithdrawPriceConsistency()` | Check withdraw price consistency | ✅ HIGH | ✅ Implemented | ✅ 1/1 passing |
+| `assertRepayPriceConsistency()` | Check repay price consistency | ✅ HIGH | ✅ Implemented | ✅ 1/1 passing |
+| `assertFlashloanPriceConsistency()` | Check flashloan price consistency | ✅ HIGH | ✅ Implemented | ❌ Not tested |
+| `assertFlashloanSimplePriceConsistency()` | Check simple flashloan price consistency | ✅ HIGH | ✅ Implemented | ❌ Not tested |
 
 ### FlashloanInvariantAssertions.a.sol ✅ **FULLY IMPLEMENTED**
 
