@@ -45,8 +45,11 @@ contract TestMockedLiquidationInvariantAssertions is CredibleTest, Test, Testnet
 
     // Setup initial positions
     vm.startPrank(user);
-    BrokenPool(address(pool)).supply(collateralAsset, 1000e6, user, 0);
-    BrokenPool(address(pool)).borrow(debtAsset, 500e8, 2, 0, user);
+    bytes32 supplyArgs = l2Encoder.encodeSupplyParams(collateralAsset, 1000e6, 0);
+    BrokenPool(address(pool)).supply(supplyArgs);
+    // Use L2Pool borrow format
+    bytes32 borrowArgs = l2Encoder.encodeBorrowParams(debtAsset, 500e8, 2, 0);
+    BrokenPool(address(pool)).borrow(borrowArgs);
     vm.stopPrank();
   }
 
@@ -188,7 +191,8 @@ contract TestMockedLiquidationInvariantAssertions is CredibleTest, Test, Testnet
 
     // Set up a position that violates liquidation amount requirements
     BrokenPool(address(pool)).setUserDebt(user, 100e8);
-    BrokenPool(address(pool)).supply(collateralAsset, 50e6, user, 0);
+    bytes32 supplyArgs = l2Encoder.encodeSupplyParams(collateralAsset, 50e6, 0);
+    BrokenPool(address(pool)).supply(supplyArgs);
 
     // Set liquidator as the caller
     vm.startPrank(liquidator);
@@ -225,7 +229,8 @@ contract TestMockedLiquidationInvariantAssertions is CredibleTest, Test, Testnet
 
     // Set up a position that violates deficit creation requirements
     BrokenPool(address(pool)).setUserDebt(user, 100e8);
-    BrokenPool(address(pool)).supply(collateralAsset, 50e6, user, 0);
+    bytes32 supplyArgs = l2Encoder.encodeSupplyParams(collateralAsset, 50e6, 0);
+    BrokenPool(address(pool)).supply(supplyArgs);
 
     // Set liquidator as the caller
     vm.startPrank(liquidator);

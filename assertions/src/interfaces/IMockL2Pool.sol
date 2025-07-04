@@ -35,6 +35,8 @@ interface IMockL2Pool {
 
   function getReserveAddressById(uint16 id) external view returns (address);
 
+  function getVirtualUnderlyingBalance(address asset) external view returns (uint128);
+
   function getUserConfiguration(
     address user
   ) external view returns (DataTypes.UserConfigurationMap memory);

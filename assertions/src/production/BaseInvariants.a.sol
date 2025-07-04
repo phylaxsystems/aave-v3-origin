@@ -63,6 +63,17 @@ contract BaseInvariants is Assertion {
       this.assertVirtualBalanceInvariant.selector,
       IMockL2Pool.liquidationCall.selector
     );
+
+    // Register triggers for liquidity index invariant
+    // TODO: needs more work to make sure calculations are correct
+    // registerCallTrigger(this.assertLiquidityIndexInvariant.selector, IMockL2Pool.supply.selector);
+    // registerCallTrigger(this.assertLiquidityIndexInvariant.selector, IMockL2Pool.withdraw.selector);
+    // registerCallTrigger(this.assertLiquidityIndexInvariant.selector, IMockL2Pool.borrow.selector);
+    // registerCallTrigger(this.assertLiquidityIndexInvariant.selector, IMockL2Pool.repay.selector);
+    // registerCallTrigger(
+    //   this.assertLiquidityIndexInvariant.selector,
+    //   IMockL2Pool.liquidationCall.selector
+    // );
   }
 
   /*/////////////////////////////////////////////////////////////////////////////////////////////
@@ -90,7 +101,10 @@ contract BaseInvariants is Assertion {
     // Process borrow operations (increase debt) - only VARIABLE mode affects variable debt token
     for (uint256 i = 0; i < borrowCalls.length; i++) {
       bytes32 args = abi.decode(borrowCalls[i].input, (bytes32));
-      if (borrowCalls[i].bytecode_address == borrowCalls[i].target_address) {
+
+      // Currently if there's a delegate call, two calls are added to the array
+      // We skip one of the calls here
+      if (borrowCalls[i].bytecode_address != borrowCalls[i].target_address) {
         continue;
       }
 
@@ -267,7 +281,10 @@ contract BaseInvariants is Assertion {
     // Process supply operations (increase aToken supply)
     for (uint256 i = 0; i < supplyCalls.length; i++) {
       bytes32 args = abi.decode(supplyCalls[i].input, (bytes32));
-      if (supplyCalls[i].bytecode_address == supplyCalls[i].target_address) {
+
+      // Currently if there's a delegate call, two calls are added to the array
+      // We skip one of the calls here
+      if (supplyCalls[i].bytecode_address != supplyCalls[i].target_address) {
         continue;
       }
 
@@ -415,12 +432,27 @@ contract BaseInvariants is Assertion {
     // Get pre and post state
     ph.forkPreState();
     uint256 preUnderlyingBalance = underlying.balanceOf(aTokenAddress);
+    uint256 preVirtualBalance = pool.getVirtualUnderlyingBalance(targetAsset);
 
     ph.forkPostState();
     uint256 postUnderlyingBalance = underlying.balanceOf(aTokenAddress);
+    uint256 postVirtualBalance = pool.getVirtualUnderlyingBalance(targetAsset);
 
-    // The actual underlying balance should be >= 0 (basic sanity check)
-    require(postUnderlyingBalance >= 0, 'Actual underlying balance is negative');
+    // The actual underlying balance should be >= virtual underlying balance
+    // This ensures the protocol has sufficient real assets to cover its accounting
+    require(
+      postUnderlyingBalance >= postVirtualBalance,
+      'Actual underlying balance is less than virtual underlying balance'
+    );
+
+    // Additional check: if virtual balance increases, actual balance should not decrease
+    // This prevents the protocol from losing real assets while increasing virtual accounting
+    if (postVirtualBalance > preVirtualBalance) {
+      require(
+        postUnderlyingBalance >= preUnderlyingBalance,
+        'Virtual balance increased but actual balance decreased'
+      );
+    }
   }
 
   /*/////////////////////////////////////////////////////////////////////////////////////////////

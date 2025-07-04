@@ -4,6 +4,7 @@ pragma solidity ^0.8.13;
 import {DataTypes} from '../../src/contracts/protocol/libraries/types/DataTypes.sol';
 import {IERC20} from '../../src/contracts/dependencies/openzeppelin/contracts/IERC20.sol';
 import {IMockL2Pool} from '../src/interfaces/IMockL2Pool.sol';
+import {MockERC20} from './MockERC20.sol';
 
 contract BrokenPool is IMockL2Pool {
   // Store user debt amounts
@@ -24,6 +25,18 @@ contract BrokenPool is IMockL2Pool {
   bool public breakWithdrawBalance;
   bool public breakFlashloanRepayment;
 
+  // BaseInvariants violation flags
+  bool public breakDebtTokenSupply;
+  bool public breakATokenSupply;
+  bool public breakUnderlyingBalance;
+  bool public breakVirtualBalance;
+  bool public breakLiquidityIndex;
+
+  // Token addresses for BaseInvariants testing
+  mapping(address => address) public variableDebtTokenAddresses;
+  mapping(address => uint256) public liquidityIndices;
+  mapping(address => uint256) public accruedToTreasury;
+
   // Simple state tracking
   mapping(address => bool) public isActive;
   mapping(address => bool) public isFrozen;
@@ -32,6 +45,14 @@ contract BrokenPool is IMockL2Pool {
   // Liquidation state
   mapping(address => uint40) public liquidationGracePeriods;
   mapping(address => uint256) public reserveDeficits;
+
+  // Mock token implementations for BaseInvariants testing
+  mapping(address => uint256) public mockATokenSupply;
+  mapping(address => uint256) public mockDebtTokenSupply;
+  mapping(address => uint256) public mockUnderlyingBalance;
+  mapping(address => MockERC20) public mockATokens;
+  mapping(address => MockERC20) public mockDebtTokens;
+  mapping(address => MockERC20) public mockUnderlyings;
 
   function setATokenAddress(address asset, address aToken) external {
     aTokenAddresses[asset] = aToken;
@@ -57,6 +78,70 @@ contract BrokenPool is IMockL2Pool {
     breakFlashloanRepayment = value;
   }
 
+  function setBreakDebtTokenSupply(bool value) external {
+    breakDebtTokenSupply = value;
+  }
+
+  function setBreakATokenSupply(bool value) external {
+    breakATokenSupply = value;
+  }
+
+  function setBreakUnderlyingBalance(bool value) external {
+    breakUnderlyingBalance = value;
+  }
+
+  function setBreakVirtualBalance(bool value) external {
+    breakVirtualBalance = value;
+
+    // If setting breakVirtualBalance to true, ensure all underlying tokens have low balances
+    // This will make actual balance < virtual balance, violating the invariant
+    if (value) {
+      // Update all created mock tokens
+      address[] memory assets = new address[](2);
+      assets[0] = address(0x1);
+      assets[1] = address(0x2);
+
+      for (uint256 i = 0; i < assets.length; i++) {
+        address asset = assets[i];
+        if (
+          address(mockUnderlyings[asset]) != address(0) && address(mockATokens[asset]) != address(0)
+        ) {
+          mockUnderlyings[asset].setBalance(address(mockATokens[asset]), 100e6); // Low actual balance
+        }
+      }
+    }
+  }
+
+  function setBreakLiquidityIndex(bool value) external {
+    breakLiquidityIndex = value;
+  }
+
+  function setVariableDebtTokenAddress(address asset, address debtToken) external {
+    variableDebtTokenAddresses[asset] = debtToken;
+  }
+
+  function setLiquidityIndex(address asset, uint256 index) external {
+    liquidityIndices[asset] = index;
+
+    // If setting liquidity index to 0, this should violate the invariant
+    // The invariant requires liquidity index >= 1e27
+    if (index == 0) {
+      // Manipulate the mock tokens to create a violation
+      // Set aToken supply to a very high value while keeping debt token supply low
+      // This will make the calculation fail
+      if (address(mockATokens[asset]) != address(0)) {
+        mockATokens[asset].setTotalSupply(1000e6); // High aToken supply
+      }
+      if (address(mockDebtTokens[asset]) != address(0)) {
+        mockDebtTokens[asset].setTotalSupply(1e6); // Low debt token supply
+      }
+    }
+  }
+
+  function setAccruedToTreasury(address asset, uint256 amount) external {
+    accruedToTreasury[asset] = amount;
+  }
+
   function setUserHealthFactor(address user, uint256 healthFactor) external {
     userHealthFactors[user] = healthFactor;
   }
@@ -74,23 +159,74 @@ contract BrokenPool is IMockL2Pool {
     isPaused[asset] = paused;
   }
 
-  function supply(address asset, uint256 amount, address onBehalfOf, uint16) external {
-    if (!breakDepositBalance) {
-      // Normal behavior - update balances
-      userBalances[onBehalfOf][asset] += amount;
+  function supply(bytes32 args) external {
+    uint16 assetId = uint16(uint256(args));
+    uint256 amount = uint256(uint128(uint256(args) >> 16));
+    address asset = getAssetAddressById(assetId);
+
+    if (breakATokenSupply) {
+      // Set aToken supply to a value that is always wrong (e.g., 42)
+      if (address(mockATokens[asset]) != address(0)) {
+        mockATokens[asset].setTotalSupply(42);
+      }
+    } else if (breakUnderlyingBalance) {
+      // Set underlying balance to a value that violates the invariant
+      // The invariant requires: underlying balance >= (aToken supply - debt token supply)
+      // Set aToken supply to 100 and underlying balance to 50, so 50 < (100 - 0) = 100
+      if (address(mockATokens[asset]) != address(0)) {
+        mockATokens[asset].setTotalSupply(100);
+      }
+      if (address(mockUnderlyings[asset]) != address(0)) {
+        mockUnderlyings[asset].setBalance(address(mockATokens[asset]), 50);
+      }
+      userBalances[msg.sender][asset] += amount;
+    } else if (breakDepositBalance) {
+      userBalances[msg.sender][asset] += amount - 1;
     } else {
-      // Broken behavior: update balance but with wrong amount (off by 1 wei)
-      userBalances[onBehalfOf][asset] += amount - 1;
+      userBalances[msg.sender][asset] += amount;
     }
+  }
+
+  // Note: The virtual balance invariant is currently a no-op in the assertion contract, so the test will always fail until implemented.
+
+  function repay(bytes32 args) external returns (uint256) {
+    // Decode parameters (simplified)
+    uint256 amount = uint256(args >> 16) & 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF;
+    if (!breakRepayDebt) {
+      // Normal behavior - decrease debt
+      if (userDebt[msg.sender] >= amount) {
+        userDebt[msg.sender] -= amount;
+      } else {
+        userDebt[msg.sender] = 0; // Prevent underflow
+      }
+    } else {
+      // Broken behavior: decrease debt but by wrong amount (off by 1 wei)
+      uint256 amountToRepay = amount > 1 ? amount - 1 : 0;
+      if (userDebt[msg.sender] >= amountToRepay) {
+        userDebt[msg.sender] -= amountToRepay;
+      } else {
+        userDebt[msg.sender] = 0; // Prevent underflow
+      }
+    }
+    return amount;
   }
 
   function repay(address, uint256 amount, uint256, address onBehalfOf) external returns (uint256) {
     if (!breakRepayDebt) {
       // Normal behavior - decrease debt
-      userDebt[onBehalfOf] -= amount;
+      if (userDebt[onBehalfOf] >= amount) {
+        userDebt[onBehalfOf] -= amount;
+      } else {
+        userDebt[onBehalfOf] = 0; // Prevent underflow
+      }
     } else {
       // Broken behavior: decrease debt but by wrong amount (off by 1 wei)
-      userDebt[onBehalfOf] -= amount - 1;
+      uint256 amountToRepay = amount > 1 ? amount - 1 : 0;
+      if (userDebt[onBehalfOf] >= amountToRepay) {
+        userDebt[onBehalfOf] -= amountToRepay;
+      } else {
+        userDebt[onBehalfOf] = 0; // Prevent underflow
+      }
     }
     return amount;
   }
@@ -128,72 +264,92 @@ contract BrokenPool is IMockL2Pool {
     if (isPaused[asset]) {
       data.configuration.data |= 1 << 60; // PAUSED_MASK position
     }
+
+    // Set token addresses for BaseInvariants testing
+    data.aTokenAddress = aTokenAddresses[asset];
+    data.variableDebtTokenAddress = variableDebtTokenAddresses[asset];
+
+    // Set liquidity index and accrued to treasury
+    data.liquidityIndex = uint128(liquidityIndices[asset]);
+    data.accruedToTreasury = uint128(accruedToTreasury[asset]);
+
+    // Set the asset ID for L2Encoder compatibility
+    // Map asset addresses to IDs: address(0x2) -> 2, address(0x1) -> 1
+    if (asset == address(0x2)) {
+      data.id = 2;
+    } else if (asset == address(0x1)) {
+      data.id = 1;
+    } else {
+      data.id = 0;
+    }
+
     return data;
   }
 
-  function borrow(address, uint256 amount, uint256, uint16, address onBehalfOf) external {
-    // Specific bug: when borrowing exactly 333e6, double the amount
-    if (amount == 333e6) {
-      userDebt[onBehalfOf] += amount * 2; // Double the debt
+  function borrow(bytes32 args) external {
+    // Decode parameters (simplified)
+    uint16 assetId;
+    uint256 amount;
+    uint256 interestRateMode;
+    uint16 referralCode;
+
+    assembly {
+      assetId := and(args, 0xFFFF)
+      amount := and(shr(16, args), 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF)
+      interestRateMode := and(shr(144, args), 0xFF)
+      referralCode := and(shr(152, args), 0xFFFF)
+    }
+
+    if (breakDebtTokenSupply) {
+      // Broken behavior: don't update user debt at all (violates debt token supply invariant)
+      // This will cause the debt token supply to not match individual user debt changes
     } else {
-      userDebt[onBehalfOf] += amount; // Normal behavior
+      // Specific bug: when borrowing exactly 333e6, double the amount
+      if (amount == 333e6) {
+        userDebt[msg.sender] += amount * 2; // Double the debt
+      } else {
+        userDebt[msg.sender] += amount; // Normal behavior
+      }
     }
   }
 
   function withdraw(address asset, uint256 amount, address) external returns (uint256) {
     if (!breakWithdrawBalance) {
       // Normal behavior - update balances
-      userBalances[msg.sender][asset] -= amount;
+      if (userBalances[msg.sender][asset] >= amount) {
+        userBalances[msg.sender][asset] -= amount;
+      } else {
+        userBalances[msg.sender][asset] = 0; // Prevent underflow
+      }
     } else {
       // Broken behavior: update balance but with wrong amount (off by 1 wei)
-      userBalances[msg.sender][asset] -= amount - 1;
+      uint256 amountToWithdraw = amount > 1 ? amount - 1 : 0;
+      if (userBalances[msg.sender][asset] >= amountToWithdraw) {
+        userBalances[msg.sender][asset] -= amountToWithdraw;
+      } else {
+        userBalances[msg.sender][asset] = 0; // Prevent underflow
+      }
     }
     return amount;
   }
 
   // L2Pool function implementations
-  function supply(bytes32 args) external {
-    // Decode parameters (simplified)
-    uint256 amount = uint256(args >> 16) & 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF;
-    // Broken behavior: update balance but with wrong amount (off by 1 wei)
-    userBalances[msg.sender][address(0)] += amount - 1;
-  }
-
   function supplyWithPermit(bytes32 args, bytes32, bytes32) external {
     // Decode parameters (simplified)
     uint256 amount = uint256(args >> 16) & 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF;
     // For testing, just call the standard supply function
-    this.supply(address(0), amount, msg.sender, 0);
+    this.supply(args);
   }
 
   function withdraw(bytes32 args) external returns (uint256) {
     // Decode parameters (simplified)
     uint256 amount = uint256(args >> 16) & 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF;
     // Broken behavior: update balance but with wrong amount (off by 1 wei)
-    userBalances[msg.sender][address(0)] -= amount - 1;
-    return amount;
-  }
-
-  function borrow(bytes32 args) external {
-    // Decode parameters (simplified)
-    uint256 amount = uint256(args >> 16) & 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF;
-    // Specific bug: when borrowing exactly 333e6, double the amount
-    if (amount == 333e6) {
-      userDebt[msg.sender] += amount * 2; // Double the debt
+    uint256 amountToWithdraw = amount > 1 ? amount - 1 : 0;
+    if (userBalances[msg.sender][address(0)] >= amountToWithdraw) {
+      userBalances[msg.sender][address(0)] -= amountToWithdraw;
     } else {
-      userDebt[msg.sender] += amount; // Normal behavior
-    }
-  }
-
-  function repay(bytes32 args) external returns (uint256) {
-    // Decode parameters (simplified)
-    uint256 amount = uint256(args >> 16) & 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF;
-    if (!breakRepayDebt) {
-      // Normal behavior - decrease debt
-      userDebt[msg.sender] -= amount;
-    } else {
-      // Broken behavior: decrease debt but by wrong amount (off by 1 wei)
-      userDebt[msg.sender] -= amount - 1;
+      userBalances[msg.sender][address(0)] = 0; // Prevent underflow
     }
     return amount;
   }
@@ -201,15 +357,15 @@ contract BrokenPool is IMockL2Pool {
   function repayWithPermit(bytes32 args, bytes32, bytes32) external returns (uint256) {
     // Decode parameters (simplified)
     uint256 amount = uint256(args >> 16) & 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF;
-    // For testing, just call the standard repay function
-    return this.repay(address(0), amount, 2, msg.sender);
+    // For testing, just call the L2Pool repay function
+    return this.repay(args);
   }
 
   function repayWithATokens(bytes32 args) external returns (uint256) {
     // Decode parameters (simplified)
     uint256 amount = uint256(args >> 16) & 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF;
-    // For testing, just call the standard repay function
-    return this.repay(address(0), amount, 2, msg.sender);
+    // For testing, just call the L2Pool repay function
+    return this.repay(args);
   }
 
   function setUserUseReserveAsCollateral(bytes32 args) external {
@@ -274,7 +430,7 @@ contract BrokenPool is IMockL2Pool {
     // For testing purposes, we'll use a simple mapping
     // In a real implementation, this would query the actual pool
     if (assetId == 1) return address(0x1); // collateral asset
-    if (assetId == 2) return address(0x2); // debt asset
+    if (assetId == 2) return address(0x2); // debt asset (matches test asset)
     return address(0);
   }
 
@@ -374,6 +530,22 @@ contract BrokenPool is IMockL2Pool {
     return reserveDeficits[asset];
   }
 
+  function getVirtualUnderlyingBalance(address asset) external view returns (uint128) {
+    // Return a mock virtual balance for testing
+    // For testing violations, we can return different values based on the asset
+    if (breakVirtualBalance) {
+      // Return a very high virtual balance that will violate the invariant
+      // This will make virtual balance > actual balance, violating the invariant
+      return 10000e6; // 10,000 tokens (much higher than actual balance)
+    }
+
+    if (asset == address(0x2)) {
+      // Return a high virtual balance that might violate the invariant
+      return 1000e6; // 1000 tokens
+    }
+    return 100e6; // Default virtual balance
+  }
+
   function getLiquidationGracePeriod(address asset) external view returns (uint40) {
     return liquidationGracePeriods[asset];
   }
@@ -419,5 +591,75 @@ contract BrokenPool is IMockL2Pool {
       IERC20(asset).transfer(receiverAddress, amount);
     }
     // Not broken behavior: Do nothing, pretending no state has changed
+  }
+
+  function setUserBalances(address user, address asset, uint256 amount) external {
+    userBalances[user][asset] = amount;
+  }
+
+  function setMockATokenSupplyAmount(address asset, uint256 supplyAmount) external {
+    mockATokenSupply[asset] = supplyAmount;
+  }
+
+  function setMockDebtTokenSupplyAmount(address asset, uint256 supplyAmount) external {
+    mockDebtTokenSupply[asset] = supplyAmount;
+  }
+
+  function setMockUnderlyingBalance(address asset, uint256 balance) external {
+    mockUnderlyingBalance[asset] = balance;
+  }
+
+  function getMockUnderlying(address asset) external view returns (MockERC20) {
+    return mockUnderlyings[asset];
+  }
+
+  // Functions to manipulate mock tokens for testing
+  function manipulateATokenSupply(address asset, uint256 newSupply) external {
+    mockATokens[asset].setTotalSupply(newSupply);
+  }
+
+  function manipulateDebtTokenSupply(address asset, uint256 newSupply) external {
+    mockDebtTokens[asset].setTotalSupply(newSupply);
+  }
+
+  function manipulateUnderlyingBalance(address asset, uint256 newBalance) external {
+    mockUnderlyings[asset].setBalance(address(this), newBalance);
+  }
+
+  function createMockTokens(address asset) external {
+    if (address(mockATokens[asset]) == address(0)) {
+      mockATokens[asset] = new MockERC20('Mock AToken', 'maTOKEN', 6);
+      mockDebtTokens[asset] = new MockERC20('Mock Debt Token', 'mDEBT', 6);
+      mockUnderlyings[asset] = new MockERC20('Mock Underlying', 'mUNDER', 6);
+
+      // Set this contract as controller
+      mockATokens[asset].setController(address(this));
+      mockDebtTokens[asset].setController(address(this));
+      mockUnderlyings[asset].setController(address(this));
+
+      // Set token addresses
+      aTokenAddresses[asset] = address(mockATokens[asset]);
+      variableDebtTokenAddresses[asset] = address(mockDebtTokens[asset]);
+
+      // If breakVirtualBalance is set, ensure the underlying token has a low balance
+      // This will make actual balance < virtual balance, violating the invariant
+      if (breakVirtualBalance) {
+        mockUnderlyings[asset].setBalance(address(mockATokens[asset]), 100e6); // Low actual balance
+      } else {
+        mockUnderlyings[asset].setBalance(address(mockATokens[asset]), 1000e6); // Normal balance
+      }
+    }
+  }
+
+  function setActive(address asset, bool value) external {
+    isActive[asset] = value;
+  }
+
+  function setFrozen(address asset, bool value) external {
+    isFrozen[asset] = value;
+  }
+
+  function setPaused(address asset, bool value) external {
+    isPaused[asset] = value;
   }
 }

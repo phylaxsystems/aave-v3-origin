@@ -158,6 +158,11 @@ contract WorkingProtocol is IMockL2Pool {
     return reserveDeficits[asset];
   }
 
+  function getVirtualUnderlyingBalance(address asset) external view returns (uint128) {
+    // Return a reasonable virtual balance for the working protocol
+    return 1000e6; // 1000 tokens as default virtual balance
+  }
+
   function getReserveAddressById(uint16) external pure returns (address) {
     return address(0);
   }
