@@ -30,7 +30,8 @@ contract MockedBorrowingInvariantAssertionsTest is CredibleTest, Test {
   address public user;
   address public asset;
   IERC20 public underlying;
-  string public constant ASSERTION_LABEL = 'BorrowingInvariantAssertions';
+  string public constant BORROWING_ASSERTION_LABEL = 'BorrowingInvariantAssertions';
+  string public constant HEALTH_FACTOR_ASSERTION_LABEL = 'HealthFactorAssertions';
 
   function setUp() public {
     // Deploy mock pool
@@ -59,7 +60,7 @@ contract MockedBorrowingInvariantAssertionsTest is CredibleTest, Test {
 
     // Associate the assertion with the protocol
     cl.addAssertion(
-      ASSERTION_LABEL,
+      BORROWING_ASSERTION_LABEL,
       address(pool),
       type(BorrowingInvariantAssertions).creationCode,
       abi.encode(IMockL2Pool(address(pool)))
@@ -71,10 +72,12 @@ contract MockedBorrowingInvariantAssertionsTest is CredibleTest, Test {
     // Create L2Pool compact parameters for repay
     bytes32 repayArgs = l2Encoder.encodeRepayParams(asset, repayAmount, 2);
 
-    // This should revert because the mock pool doesn't decrease debt
+    // This should revert because the mock pool doesn't decrease debt properly
+    // The BrokenPool.repay() decreases debt by amount-1 instead of amount
+    // This should trigger assertRepayDebtChanges to fail
     vm.expectRevert('Assertions Reverted');
     cl.validate(
-      ASSERTION_LABEL,
+      BORROWING_ASSERTION_LABEL,
       address(pool),
       0,
       abi.encodeWithSelector(IMockL2Pool.repay.selector, repayArgs)
@@ -85,10 +88,12 @@ contract MockedBorrowingInvariantAssertionsTest is CredibleTest, Test {
   function testAssertionUnhealthyBorrowPreventionFailure() public {
     // Set up an unhealthy user (health factor < 1e18)
     BrokenPool(address(pool)).setUserDebt(user, 1000e6); // High debt to make user unhealthy
+    // Set health factor to 0.5e18 (unhealthy - should be >= 1e18)
+    BrokenPool(address(pool)).setUserHealthFactor(user, 0.5e18);
 
-    // Associate the assertion with the protocol
+    // Associate the health factor assertion with the protocol
     cl.addAssertion(
-      ASSERTION_LABEL,
+      HEALTH_FACTOR_ASSERTION_LABEL,
       address(pool),
       type(BorrowingInvariantAssertions).creationCode,
       abi.encode(IMockL2Pool(address(pool)))
@@ -101,9 +106,11 @@ contract MockedBorrowingInvariantAssertionsTest is CredibleTest, Test {
     bytes32 borrowArgs = l2Encoder.encodeBorrowParams(asset, 100e6, 2, 0);
 
     // This should revert because the mock pool allows unhealthy users to borrow
+    // The user has health factor 0.5e18 which is < 1e18, so borrowing should be prevented
+    // This should trigger assertBorrowHealthyToUnhealthy to fail
     vm.expectRevert('Assertions Reverted');
     cl.validate(
-      ASSERTION_LABEL,
+      HEALTH_FACTOR_ASSERTION_LABEL,
       address(pool),
       0,
       abi.encodeWithSelector(IMockL2Pool.borrow.selector, borrowArgs)

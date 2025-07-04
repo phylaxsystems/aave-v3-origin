@@ -131,4 +131,106 @@ contract OracleAssertionsTest is CredibleTest, Test, TestnetProcedures {
     );
     vm.stopPrank();
   }
+
+  // ORACLE_INVARIANT_B Tests - Price Consistency
+
+  function testAssertionBorrowPriceConsistency() public {
+    // Associate the assertion with the protocol
+    cl.addAssertion(
+      ASSERTION_LABEL,
+      address(pool),
+      type(OracleAssertions).creationCode,
+      abi.encode(address(oracle), address(pool))
+    );
+
+    // Set user as the caller
+    vm.startPrank(alice);
+
+    // Create L2Pool compact parameters for borrow
+    bytes32 borrowArgs = l2Encoder.encodeBorrowParams(asset, 100e6, 2, 0);
+
+    // This should pass because price remains consistent
+    cl.validate(
+      ASSERTION_LABEL,
+      address(pool),
+      0,
+      abi.encodeWithSelector(pool.borrow.selector, borrowArgs)
+    );
+    vm.stopPrank();
+  }
+
+  function testAssertionSupplyPriceConsistency() public {
+    // Associate the assertion with the protocol
+    cl.addAssertion(
+      ASSERTION_LABEL,
+      address(pool),
+      type(OracleAssertions).creationCode,
+      abi.encode(address(oracle), address(pool))
+    );
+
+    // Set user as the caller
+    vm.startPrank(alice);
+
+    // Create L2Pool compact parameters for supply
+    bytes32 supplyArgs = l2Encoder.encodeSupplyParams(asset, 100e6, 0);
+
+    // This should pass because price remains consistent
+    cl.validate(
+      ASSERTION_LABEL,
+      address(pool),
+      0,
+      abi.encodeWithSelector(pool.supply.selector, supplyArgs)
+    );
+    vm.stopPrank();
+  }
+
+  function testAssertionWithdrawPriceConsistency() public {
+    // Associate the assertion with the protocol
+    cl.addAssertion(
+      ASSERTION_LABEL,
+      address(pool),
+      type(OracleAssertions).creationCode,
+      abi.encode(address(oracle), address(pool))
+    );
+
+    // Set user as the caller
+    vm.startPrank(alice);
+
+    // Create L2Pool compact parameters for withdraw
+    bytes32 withdrawArgs = l2Encoder.encodeWithdrawParams(asset, 100e6);
+
+    // This should pass because price remains consistent
+    cl.validate(
+      ASSERTION_LABEL,
+      address(pool),
+      0,
+      abi.encodeWithSelector(pool.withdraw.selector, withdrawArgs)
+    );
+    vm.stopPrank();
+  }
+
+  function testAssertionRepayPriceConsistency() public {
+    // Associate the assertion with the protocol
+    cl.addAssertion(
+      ASSERTION_LABEL,
+      address(pool),
+      type(OracleAssertions).creationCode,
+      abi.encode(address(oracle), address(pool))
+    );
+
+    // Set user as the caller
+    vm.startPrank(alice);
+
+    // Create L2Pool compact parameters for repay
+    bytes32 repayArgs = l2Encoder.encodeRepayParams(asset, 100e6, 2);
+
+    // This should pass because price remains consistent
+    cl.validate(
+      ASSERTION_LABEL,
+      address(pool),
+      0,
+      abi.encodeWithSelector(pool.repay.selector, repayArgs)
+    );
+    vm.stopPrank();
+  }
 }

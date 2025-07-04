@@ -28,14 +28,30 @@ contract OracleAssertions is Assertion {
       this.assertLiquidationPriceDeviation.selector,
       pool.liquidationCall.selector
     );
-    // Register triggers for price consistency checks
+    // Register triggers for price consistency checks (ORACLE_INVARIANT_B)
     registerCallTrigger(this.assertBorrowPriceConsistency.selector, pool.borrow.selector);
     registerCallTrigger(this.assertSupplyPriceConsistency.selector, pool.supply.selector);
+    registerCallTrigger(this.assertWithdrawPriceConsistency.selector, pool.withdraw.selector);
+    registerCallTrigger(this.assertRepayPriceConsistency.selector, pool.repay.selector);
     registerCallTrigger(
       this.assertLiquidationPriceConsistency.selector,
       pool.liquidationCall.selector
     );
+    registerCallTrigger(this.assertFlashloanPriceConsistency.selector, pool.flashLoan.selector);
+    registerCallTrigger(
+      this.assertFlashloanSimplePriceConsistency.selector,
+      pool.flashLoanSimple.selector
+    );
   }
+
+  /*/////////////////////////////////////////////////////////////////////////////////////////////
+        ORACLE_INVARIANT_A: getAssetPrice must never revert
+        NOTE: This invariant cannot be tested with assertions because:
+        1. We cannot force oracle failures in a controlled way
+        2. Oracle failures are external to the protocol and depend on price feed implementations
+        3. Testing this would require mocking oracle failures, which defeats the purpose
+        4. This invariant is better tested at the oracle implementation level
+    /////////////////////////////////////////////////////////////////////////////////////////////*/
 
   /*/////////////////////////////////////////////////////////////////////////////////////////////
         Don't allow price deviation before / after a tx to be more than 5%
@@ -178,6 +194,42 @@ contract OracleAssertions is Assertion {
   }
 
   /**
+   * @notice Asserts that the oracle price remains consistent during withdraw operations
+   */
+  function assertWithdrawPriceConsistency() external {
+    PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.withdraw.selector);
+    for (uint256 i = 0; i < callInputs.length; i++) {
+      bytes32 args = abi.decode(callInputs[i].input, (bytes32));
+
+      // Decode L2Pool withdraw parameters: assetId (16 bits) + amount (128 bits) + to (160 bits)
+      uint16 assetId = uint16(uint256(args));
+      address asset = pool.getReserveAddressById(assetId);
+
+      if (asset != address(0)) {
+        _checkPriceConsistency(asset);
+      }
+    }
+  }
+
+  /**
+   * @notice Asserts that the oracle price remains consistent during repay operations
+   */
+  function assertRepayPriceConsistency() external {
+    PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.repay.selector);
+    for (uint256 i = 0; i < callInputs.length; i++) {
+      bytes32 args = abi.decode(callInputs[i].input, (bytes32));
+
+      // Decode L2Pool repay parameters: assetId (16 bits) + amount (128 bits) + interestRateMode (8 bits)
+      uint16 assetId = uint16(uint256(args));
+      address asset = pool.getReserveAddressById(assetId);
+
+      if (asset != address(0)) {
+        _checkPriceConsistency(asset);
+      }
+    }
+  }
+
+  /**
    * @notice Asserts that the oracle price remains consistent during liquidation operations
    */
   function assertLiquidationPriceConsistency() external {
@@ -207,6 +259,48 @@ contract OracleAssertions is Assertion {
   }
 
   /**
+   * @notice Asserts that the oracle price remains consistent during flashloan operations
+   */
+  function assertFlashloanPriceConsistency() external {
+    PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.flashLoan.selector);
+    for (uint256 i = 0; i < callInputs.length; i++) {
+      // Decode flashLoan parameters: (address receiverAddress, address[] assets, uint256[] amounts, uint256[] modes, address onBehalfOf, bytes params, uint16 referralCode)
+      (address receiverAddress, address[] memory assets, , , , , ) = abi.decode(
+        callInputs[i].input,
+        (address, address[], uint256[], uint256[], address, bytes, uint16)
+      );
+
+      // Check price consistency for all assets in the flashloan
+      for (uint256 j = 0; j < assets.length; j++) {
+        if (assets[j] != address(0)) {
+          _checkPriceConsistency(assets[j]);
+        }
+      }
+    }
+  }
+
+  /**
+   * @notice Asserts that the oracle price remains consistent during flashloanSimple operations
+   */
+  function assertFlashloanSimplePriceConsistency() external {
+    PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(
+      address(pool),
+      pool.flashLoanSimple.selector
+    );
+    for (uint256 i = 0; i < callInputs.length; i++) {
+      // Decode flashLoanSimple parameters: (address receiverAddress, address asset, uint256 amount, bytes params, uint16 referralCode)
+      (address receiverAddress, address asset, , , ) = abi.decode(
+        callInputs[i].input,
+        (address, address, uint256, bytes, uint16)
+      );
+
+      if (asset != address(0)) {
+        _checkPriceConsistency(asset);
+      }
+    }
+  }
+
+  /**
    * @notice Internal helper to check price consistency for an asset
    * @param asset The address of the asset to check
    */
@@ -224,5 +318,13 @@ contract OracleAssertions is Assertion {
 
     // Check prices are exactly equal
     require(initialPrice == finalPrice, 'Oracle price changed during transaction');
+  }
+
+  function assertPriceDeviationAllCalls() external {
+    // It would be ideal to be able to read the price from a storage slot
+    // and get all changes in price to make sure they're the same, but the way
+    // the oracle is implemented, it's not possible to do this.
+    // Good assertions for Oracles like Chainlink is high priority and we're
+    // actively working on it.
   }
 }

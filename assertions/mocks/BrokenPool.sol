@@ -188,8 +188,13 @@ contract BrokenPool is IMockL2Pool {
   function repay(bytes32 args) external returns (uint256) {
     // Decode parameters (simplified)
     uint256 amount = uint256(args >> 16) & 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF;
-    // Broken behavior: decrease debt but by wrong amount (off by 1 wei)
-    userDebt[msg.sender] -= amount - 1;
+    if (!breakRepayDebt) {
+      // Normal behavior - decrease debt
+      userDebt[msg.sender] -= amount;
+    } else {
+      // Broken behavior: decrease debt but by wrong amount (off by 1 wei)
+      userDebt[msg.sender] -= amount - 1;
+    }
     return amount;
   }
 

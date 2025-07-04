@@ -34,6 +34,10 @@ contract BorrowingInvariantAssertions is Assertion {
     IMockL2Pool pool = IMockL2Pool(ph.getAssertionAdopter());
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.borrow.selector);
     for (uint256 i = 0; i < callInputs.length; i++) {
+      // Skip if the call is a delegatecall
+      if (callInputs[i].bytecode_address == callInputs[i].target_address) {
+        continue;
+      }
       bytes32 args = abi.decode(callInputs[i].input, (bytes32));
       // Decode L2Pool borrow parameters: assetId (16 bits) + amount (128 bits) + interestRateMode (8 bits) + referralCode (16 bits)
       uint256 amount = uint256(uint128(uint256(args) >> 16));
@@ -79,6 +83,10 @@ contract BorrowingInvariantAssertions is Assertion {
     IMockL2Pool pool = IMockL2Pool(ph.getAssertionAdopter());
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.borrow.selector);
     for (uint256 i = 0; i < callInputs.length; i++) {
+      // Skip if the call is a delegatecall
+      if (callInputs[i].bytecode_address == callInputs[i].target_address) {
+        continue;
+      }
       bytes32 args = abi.decode(callInputs[i].input, (bytes32));
       // Decode L2Pool borrow parameters: assetId (16 bits) + amount (128 bits) + interestRateMode (8 bits) + referralCode (16 bits)
       uint256 amount = uint256(uint128(uint256(args) >> 16));
@@ -126,6 +134,10 @@ contract BorrowingInvariantAssertions is Assertion {
     IMockL2Pool pool = IMockL2Pool(ph.getAssertionAdopter());
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.borrow.selector);
     for (uint256 i = 0; i < callInputs.length; i++) {
+      // Skip if the call is a delegatecall
+      if (callInputs[i].bytecode_address == callInputs[i].target_address) {
+        continue;
+      }
       bytes32 args = abi.decode(callInputs[i].input, (bytes32));
       // Decode L2Pool borrow parameters: assetId (16 bits) + amount (128 bits) + interestRateMode (8 bits) + referralCode (16 bits)
       uint16 assetId = uint16(uint256(args));
@@ -159,6 +171,10 @@ contract BorrowingInvariantAssertions is Assertion {
     IMockL2Pool pool = IMockL2Pool(ph.getAssertionAdopter());
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.repay.selector);
     for (uint256 i = 0; i < callInputs.length; i++) {
+      // Skip if the call is a delegatecall
+      if (callInputs[i].bytecode_address == callInputs[i].target_address) {
+        continue;
+      }
       bytes32 args = abi.decode(callInputs[i].input, (bytes32));
       // Decode L2Pool repay parameters: assetId (16 bits) + amount (128 bits) + interestRateMode (8 bits)
       uint16 assetId = uint16(uint256(args));
@@ -203,6 +219,10 @@ contract BorrowingInvariantAssertions is Assertion {
     IMockL2Pool pool = IMockL2Pool(ph.getAssertionAdopter());
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.borrow.selector);
     for (uint256 i = 0; i < callInputs.length; i++) {
+      // Skip if the call is a delegatecall
+      if (callInputs[i].bytecode_address == callInputs[i].target_address) {
+        continue;
+      }
       bytes32 args = abi.decode(callInputs[i].input, (bytes32));
       // Decode L2Pool borrow parameters: assetId (16 bits) + amount (128 bits) + interestRateMode (8 bits) + referralCode (16 bits)
       uint16 assetId = uint16(uint256(args));
@@ -239,6 +259,10 @@ contract BorrowingInvariantAssertions is Assertion {
     IMockL2Pool pool = IMockL2Pool(ph.getAssertionAdopter());
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.borrow.selector);
     for (uint256 i = 0; i < callInputs.length; i++) {
+      // Skip if the call is a delegatecall
+      if (callInputs[i].bytecode_address == callInputs[i].target_address) {
+        continue;
+      }
       bytes32 args = abi.decode(callInputs[i].input, (bytes32));
       // Decode L2Pool borrow parameters: assetId (16 bits) + amount (128 bits) + interestRateMode (8 bits) + referralCode (16 bits)
       uint16 assetId = uint16(uint256(args));
@@ -273,6 +297,10 @@ contract BorrowingInvariantAssertions is Assertion {
     IMockL2Pool pool = IMockL2Pool(ph.getAssertionAdopter());
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.borrow.selector);
     for (uint256 i = 0; i < callInputs.length; i++) {
+      // Skip if the call is a delegatecall
+      if (callInputs[i].bytecode_address == callInputs[i].target_address) {
+        continue;
+      }
       bytes32 args = abi.decode(callInputs[i].input, (bytes32));
       // Decode L2Pool borrow parameters: assetId (16 bits) + amount (128 bits) + interestRateMode (8 bits) + referralCode (16 bits)
       uint256 amount = uint256(uint128(uint256(args) >> 16));
@@ -337,6 +365,10 @@ contract BorrowingInvariantAssertions is Assertion {
     IMockL2Pool pool = IMockL2Pool(ph.getAssertionAdopter());
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.repay.selector);
     for (uint256 i = 0; i < callInputs.length; i++) {
+      // Skip if the call is a delegatecall
+      if (callInputs[i].bytecode_address == callInputs[i].target_address) {
+        continue;
+      }
       bytes32 args = abi.decode(callInputs[i].input, (bytes32));
       // Decode L2Pool repay parameters: assetId (16 bits) + amount (128 bits) + interestRateMode (8 bits)
       uint256 amount = uint256(uint128(uint256(args) >> 16));
