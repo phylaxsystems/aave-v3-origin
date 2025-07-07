@@ -387,41 +387,50 @@ contract BrokenPool is IMockL2Pool {
     address debtAsset = getAssetAddressById(debtAssetId);
     uint256 currentCollateral = userBalances[user][collateralAsset];
 
-    // Implement subtle broken behaviors that are harder to detect
+    // Ensure we have valid debt to work with
+    if (currentDebt == 0) {
+      return; // No debt to liquidate
+    }
+
+    // Calculate how much debt to burn (don't exceed current debt)
+    uint256 debtToBurn = debtToCover > currentDebt ? currentDebt : debtToCover;
+
+    // Ensure we don't underflow
+    if (userDebt[user] >= debtToBurn) {
+      userDebt[user] -= debtToBurn;
+    } else {
+      userDebt[user] = 0; // Prevent underflow
+    }
+
+    // Implement specific broken behaviors for different test scenarios
+    // Each test should trigger a different violation
 
     // For deficit creation test: create deficit while user still has collateral
-    if (currentDebt > 0 && currentCollateral > 0) {
-      // Burn all debt but leave some collateral (violates deficit creation rule)
-      userDebt[user] = 0;
-      // Don't clear collateral - this should trigger the assertion
+    // This will be triggered by specific test setup where user has both debt and collateral
+    if (currentDebt > 0 && currentCollateral > 0 && userDebt[user] == 0) {
+      // User has no debt left but still has collateral - this violates deficit creation rule
+      // The assertion should catch this
     }
 
     // For deficit accounting test: update reserve deficit but with wrong amount
-    if (currentDebt > 0) {
-      uint256 debtToBurn = debtToCover > currentDebt ? currentDebt : debtToCover;
-      userDebt[user] -= debtToBurn;
+    if (debtToBurn > 0) {
       // Update deficit but with wrong amount (off by 1 wei)
       reserveDeficits[debtAsset] += debtToBurn - 1;
     }
 
     // For deficit amount test: set deficit to wrong amount
-    if (currentDebt > 0) {
-      reserveDeficits[debtAsset] = currentDebt / 2; // Set deficit to half of debt
+    if (userDebt[user] > 0) {
+      reserveDeficits[debtAsset] = userDebt[user] / 2; // Set deficit to half of remaining debt
     }
 
     // For active reserve deficit test: create deficit on inactive reserve
-    if (currentDebt > 0 && !isActive[debtAsset]) {
-      reserveDeficits[debtAsset] = currentDebt;
+    if (userDebt[user] > 0 && !isActive[debtAsset]) {
+      reserveDeficits[debtAsset] = userDebt[user];
     }
 
     // For liquidation amounts test: leave insufficient leftover
-    if (currentDebt > 0) {
-      uint256 debtToBurn = debtToCover > currentDebt ? currentDebt : debtToCover;
-      userDebt[user] -= debtToBurn;
-      // Leave very small amount (less than MIN_LEFTOVER_BASE)
-      if (userDebt[user] > 0 && userDebt[user] < 100e18) {
-        userDebt[user] = 1; // Set to 1 wei (much less than MIN_LEFTOVER_BASE)
-      }
+    if (userDebt[user] > 0 && userDebt[user] < 100e18) {
+      userDebt[user] = 1; // Set to 1 wei (much less than MIN_LEFTOVER_BASE)
     }
   }
 
