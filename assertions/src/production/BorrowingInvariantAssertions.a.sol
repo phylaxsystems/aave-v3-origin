@@ -46,9 +46,7 @@ contract BorrowingInvariantAssertions is Assertion {
 
       // Get user account data before borrow
       ph.forkPreState();
-      (, uint256 totalDebtBase, , , , ) = pool.getUserAccountData(
-        onBehalfOf
-      );
+      (, uint256 totalDebtBase, , , , ) = pool.getUserAccountData(onBehalfOf);
 
       // If user has no debt, they should have sufficient collateral
       if (totalDebtBase == 0) {
@@ -121,9 +119,10 @@ contract BorrowingInvariantAssertions is Assertion {
         // We have to check all reserves, but we only have the borrowed asset here, so this is a limitation
         // Instead, we check if the borrowed asset is borrowable in isolation, and if not, fail
         DataTypes.ReserveDataLegacy memory borrowAssetData = pool.getReserveData(asset);
-        if (!ReserveConfiguration.getBorrowableInIsolation(borrowAssetData.configuration)) {
-          revert('Borrowed asset is not borrowable in isolation mode');
-        }
+        require(
+          ReserveConfiguration.getBorrowableInIsolation(borrowAssetData.configuration),
+          'Borrowed asset is not borrowable in isolation mode'
+        );
       }
     }
   }
