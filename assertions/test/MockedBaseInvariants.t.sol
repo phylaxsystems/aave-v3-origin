@@ -51,7 +51,7 @@ contract MockedBaseInvariantsTest is CredibleTest, Test {
     variableDebtToken = BrokenPool(address(pool)).variableDebtTokenAddresses(asset);
 
     // Get the mock underlying token from BrokenPool
-    MockERC20 mockUnderlying = BrokenPool(address(pool)).getMockUnderlying(asset);
+    mockUnderlying = BrokenPool(address(pool)).getMockUnderlying(asset);
     underlying = IERC20(address(mockUnderlying));
 
     // Set up L2Encoder for creating compact parameters

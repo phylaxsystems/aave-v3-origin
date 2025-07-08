@@ -50,6 +50,12 @@ interface IMockL2Pool {
   function getUserDebtBalance(address user, address asset) external view returns (uint256);
   function getReserveDeficit(address asset) external view returns (uint256);
 
+  // Configuration-related functions
+  function getConfiguration(
+    address asset
+  ) external view returns (DataTypes.ReserveConfigurationMap memory);
+  function getPendingLtv(address asset) external view returns (uint256);
+
   // Flashloan functions (inherited from Pool)
   function flashLoan(
     address receiverAddress,

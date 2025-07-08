@@ -290,4 +290,29 @@ contract WorkingProtocol is IMockL2Pool {
     // For testing, just call the standard liquidation function
     this.liquidationCall(address(0), address(0), user, debtToCover, false);
   }
+
+  // Configuration-related functions
+  function getConfiguration(address asset) external view returns (DataTypes.ReserveConfigurationMap memory) {
+    // Create a mock configuration map
+    // For testing purposes, we'll use a simple mapping
+    // In a real implementation, this would query the actual pool configuration
+    DataTypes.ReserveConfigurationMap memory config;
+    
+    // Set the frozen flag based on our mock state
+    if (reserveFrozen[asset]) {
+      // Set the frozen bit in the configuration
+      config.data = config.data | (1 << 63); // Set frozen bit
+    }
+    
+    return config;
+  }
+
+  function getPendingLtv(address asset) external view returns (uint256) {
+    // For testing purposes, return a mock pending LTV
+    // In a real implementation, this would query the actual pending LTV
+    if (reserveFrozen[asset]) {
+      return 8000; // 80% LTV for frozen reserves
+    }
+    return 0; // No pending LTV for non-frozen reserves
+  }
 }

@@ -58,7 +58,6 @@ contract FlashloanInvariantAssertions is Assertion {
       // Decode L2Pool flashLoan parameters: assetId (16 bits) + amount (128 bits) + referralCode (16 bits)
       bytes32 args = abi.decode(callInputs[i].input, (bytes32));
       uint16 assetId = uint16(uint256(args));
-      uint256 amount = uint256(uint128(uint256(args) >> 16));
 
       // Get the asset address from the assetId
       address asset = pool.getReserveAddressById(assetId);

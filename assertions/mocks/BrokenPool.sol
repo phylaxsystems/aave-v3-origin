@@ -7,6 +7,17 @@ import {IMockL2Pool} from '../src/interfaces/IMockL2Pool.sol';
 import {MockERC20} from './MockERC20.sol';
 
 contract BrokenPool is IMockL2Pool {
+  // Event for LogBasedAssertions testing - matches IPool.sol
+  event Borrow(
+    address indexed reserve,
+    address user,
+    address indexed onBehalfOf,
+    uint256 amount,
+    DataTypes.InterestRateMode interestRateMode,
+    uint256 borrowRate,
+    uint16 indexed referralCode
+  );
+
   // Store user debt amounts
   mapping(address => uint256) public userDebt;
 
@@ -300,6 +311,20 @@ contract BrokenPool is IMockL2Pool {
       referralCode := and(shr(152, args), 0xFFFF)
     }
 
+    // Get the asset address from the asset ID
+    address asset = getAssetAddressById(assetId);
+
+    // Emit the Borrow event for LogBasedAssertions testing
+    emit Borrow(
+      asset, // reserve
+      msg.sender, // user
+      msg.sender, // onBehalfOf
+      amount, // amount
+      DataTypes.InterestRateMode(interestRateMode), // interestRateMode
+      0, // borrowRate (mock value)
+      referralCode // referralCode
+    );
+
     if (breakDebtTokenSupply) {
       // Broken behavior: don't update user debt at all (violates debt token supply invariant)
       // This will cause the debt token supply to not match individual user debt changes
@@ -465,9 +490,20 @@ contract BrokenPool is IMockL2Pool {
   ) external {}
 
   function getConfiguration(
-    address
-  ) external pure returns (DataTypes.ReserveConfigurationMap memory) {
-    return DataTypes.ReserveConfigurationMap(0);
+    address asset
+  ) external view returns (DataTypes.ReserveConfigurationMap memory) {
+    // Create a mock configuration map
+    // For testing purposes, we'll use a simple mapping
+    // In a real implementation, this would query the actual pool configuration
+    DataTypes.ReserveConfigurationMap memory config;
+
+    // Set the frozen flag based on our mock state
+    if (isFrozen[asset]) {
+      // Set the frozen bit in the configuration
+      config.data = config.data | (1 << 63); // Set frozen bit
+    }
+
+    return config;
   }
 
   function getUserConfiguration(
@@ -670,5 +706,14 @@ contract BrokenPool is IMockL2Pool {
 
   function setPaused(address asset, bool value) external {
     isPaused[asset] = value;
+  }
+
+  function getPendingLtv(address asset) external view returns (uint256) {
+    // For testing purposes, return a mock pending LTV
+    // In a real implementation, this would query the actual pending LTV
+    if (isFrozen[asset]) {
+      return 8000; // 80% LTV for frozen reserves
+    }
+    return 0; // No pending LTV for non-frozen reserves
   }
 }

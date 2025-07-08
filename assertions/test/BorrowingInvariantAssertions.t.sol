@@ -14,7 +14,7 @@ pragma solidity ^0.8.13;
  */
 import {Test} from 'forge-std/Test.sol';
 import {CredibleTest} from 'credible-std/CredibleTest.sol';
-import {BorrowingInvariantAssertions} from '../src/showcase/BorrowingInvariantAssertions.a.sol';
+import {BorrowingInvariantAssertions} from '../src/production/BorrowingInvariantAssertions.a.sol';
 import {IMockL2Pool} from '../src/interfaces/IMockL2Pool.sol';
 import {DataTypes} from '../../src/contracts/protocol/libraries/types/DataTypes.sol';
 import {IERC20} from '../../src/contracts/dependencies/openzeppelin/contracts/IERC20.sol';

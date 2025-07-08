@@ -14,6 +14,8 @@ import {WadRayMath} from '../../../src/contracts/protocol/libraries/math/WadRayM
  * @notice Assertions for basic protocol invariants related to token balances and borrowing states for a specific asset
  */
 contract BaseInvariants is Assertion {
+  using ReserveConfiguration for DataTypes.ReserveConfigurationMap;
+
   address public immutable targetAsset;
   IMockL2Pool public immutable pool;
 
@@ -61,6 +63,19 @@ contract BaseInvariants is Assertion {
     registerCallTrigger(this.assertVirtualBalanceInvariant.selector, IMockL2Pool.repay.selector);
     registerCallTrigger(
       this.assertVirtualBalanceInvariant.selector,
+      IMockL2Pool.liquidationCall.selector
+    );
+
+    // Register triggers for frozen reserve LTV invariant
+    registerCallTrigger(this.assertFrozenReserveLtvInvariant.selector, IMockL2Pool.supply.selector);
+    registerCallTrigger(
+      this.assertFrozenReserveLtvInvariant.selector,
+      IMockL2Pool.withdraw.selector
+    );
+    registerCallTrigger(this.assertFrozenReserveLtvInvariant.selector, IMockL2Pool.borrow.selector);
+    registerCallTrigger(this.assertFrozenReserveLtvInvariant.selector, IMockL2Pool.repay.selector);
+    registerCallTrigger(
+      this.assertFrozenReserveLtvInvariant.selector,
       IMockL2Pool.liquidationCall.selector
     );
 
@@ -456,6 +471,23 @@ contract BaseInvariants is Assertion {
   }
 
   /*/////////////////////////////////////////////////////////////////////////////////////////////
+        BASE_INVARIANT_E: If reserve is frozen pending ltv cannot be 0
+        This ensures that when a reserve is frozen, there must be a pending LTV change
+    /////////////////////////////////////////////////////////////////////////////////////////////*/
+  function assertFrozenReserveLtvInvariant() external {
+    // Get reserve configuration to check if frozen
+    DataTypes.ReserveConfigurationMap memory config = pool.getConfiguration(targetAsset);
+
+    // Check if reserve is frozen
+    if (config.getFrozen()) {
+      // If reserve is frozen, pending LTV should not be 0
+      // This ensures there's a pending configuration change
+      uint256 pendingLtv = pool.getPendingLtv(targetAsset);
+      require(pendingLtv != 0, 'BASE_INVARIANT_E: Frozen reserve has no pending LTV change');
+    }
+  }
+
+  /*/////////////////////////////////////////////////////////////////////////////////////////////
         BASE_INVARIANT_F: virtualBalance + currentDebt = (scaledATokenTotalSupply + accrueToTreasury) * liquidityIndexRightNow
         This is the core accounting invariant that ensures proper interest accrual
     /////////////////////////////////////////////////////////////////////////////////////////////*/
@@ -474,9 +506,7 @@ contract BaseInvariants is Assertion {
 
     // Get pre and post state
     ph.forkPreState();
-    uint256 preCurrentDebt = variableDebtToken.totalSupply();
     uint256 preScaledATokenSupply = aToken.totalSupply();
-    uint256 preAccrueToTreasury = reserveData.accruedToTreasury;
     uint256 preLiquidityIndex = reserveData.liquidityIndex;
 
     ph.forkPostState();

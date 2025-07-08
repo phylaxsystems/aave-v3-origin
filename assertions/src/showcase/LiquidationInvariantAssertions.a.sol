@@ -98,26 +98,18 @@ contract LiquidationInvariantAssertions is Assertion {
     );
     for (uint256 i = 0; i < callInputs.length; i++) {
       // L2Pool liquidationCall takes two bytes32 parameters
-      (bytes32 args1, bytes32 args2) = abi.decode(callInputs[i].input, (bytes32, bytes32));
+      (bytes32 args1, ) = abi.decode(callInputs[i].input, (bytes32, bytes32));
       // Decode L2Pool liquidation parameters:
       // args1: collateralAssetId (16 bits) + debtAssetId (16 bits) + user (160 bits)
       // args2: debtToCover (128 bits) + receiveAToken (1 bit) + unused (127 bits)
-      uint16 collateralAssetId = uint16(uint256(args1));
       uint16 debtAssetId = uint16(uint256(args1) >> 16);
       address user = address(uint160(uint256(args1) >> 32));
 
-      // Get the asset addresses from the assetIds
-      address collateralAsset = pool.getReserveAddressById(collateralAssetId);
+      // Get the asset address from the assetId
       address debtAsset = pool.getReserveAddressById(debtAssetId);
-
-      // Get user data before liquidation
-      ph.forkPreState();
-      (, uint256 totalDebtBase, , , , ) = pool.getUserAccountData(user);
-      uint256 userDebt = pool.getUserDebtBalance(user, debtAsset);
 
       // Get user data after liquidation
       ph.forkPostState();
-      (, uint256 postTotalDebtBase, , , , ) = pool.getUserAccountData(user);
       uint256 postUserDebt = pool.getUserDebtBalance(user, debtAsset);
 
       // Check if liquidation leaves sufficient amounts

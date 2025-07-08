@@ -265,7 +265,7 @@ contract OracleAssertions is Assertion {
     PhEvm.CallInputs[] memory callInputs = ph.getCallInputs(address(pool), pool.flashLoan.selector);
     for (uint256 i = 0; i < callInputs.length; i++) {
       // Decode flashLoan parameters: (address receiverAddress, address[] assets, uint256[] amounts, uint256[] modes, address onBehalfOf, bytes params, uint16 referralCode)
-      (address receiverAddress, address[] memory assets, , , , , ) = abi.decode(
+      (, address[] memory assets, , , , , ) = abi.decode(
         callInputs[i].input,
         (address, address[], uint256[], uint256[], address, bytes, uint16)
       );
@@ -289,7 +289,7 @@ contract OracleAssertions is Assertion {
     );
     for (uint256 i = 0; i < callInputs.length; i++) {
       // Decode flashLoanSimple parameters: (address receiverAddress, address asset, uint256 amount, bytes params, uint16 referralCode)
-      (address receiverAddress, address asset, , , ) = abi.decode(
+      (, address asset, , , ) = abi.decode(
         callInputs[i].input,
         (address, address, uint256, bytes, uint16)
       );

@@ -25,7 +25,6 @@ contract LogBasedAssertions is Assertion {
   // since it relies on the event being emitted rather than the direct function call
   // Gas cost of this assertion for a single borrow transaction: 42739
   function assertBorrowBalanceChangesFromLogs() external {
-    IMockL2Pool pool = IMockL2Pool(ph.getAssertionAdopter());
     PhEvm.Log[] memory logs = ph.getLogs();
     for (uint256 i = 0; i < logs.length; i++) {
       if (
@@ -36,10 +35,12 @@ contract LogBasedAssertions is Assertion {
         address reserve = address(uint160(uint256(logs[i].topics[1])));
 
         // Get non-indexed fields from data
-        (address user, uint256 amount, , ) = abi.decode(
-          logs[i].data,
-          (address, uint256, DataTypes.InterestRateMode, uint256)
-        );
+        (
+          address user,
+          uint256 amount,
+          ,
+          
+        ) = abi.decode(logs[i].data, (address, uint256, DataTypes.InterestRateMode, uint256));
 
         // Get underlying token
         IERC20 underlying = IERC20(reserve);

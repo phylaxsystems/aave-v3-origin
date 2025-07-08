@@ -46,7 +46,7 @@ contract BorrowingInvariantAssertions is Assertion {
 
       // Get user account data before borrow
       ph.forkPreState();
-      (uint256 totalCollateralBase, uint256 totalDebtBase, , , , ) = pool.getUserAccountData(
+      (, uint256 totalDebtBase, , , , ) = pool.getUserAccountData(
         onBehalfOf
       );
 

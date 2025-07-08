@@ -9,6 +9,8 @@ import {BaseInvariants} from '../src/production/BaseInvariants.a.sol';
 import {IMockL2Pool} from '../src/interfaces/IMockL2Pool.sol';
 import {L2Encoder} from '../../src/contracts/helpers/L2Encoder.sol';
 import {TestnetProcedures} from '../../tests/utils/TestnetProcedures.sol';
+import {BrokenPool} from '../mocks/BrokenPool.sol';
+import {IPool} from '../../src/contracts/interfaces/IPool.sol';
 
 /**
  * @title BaseInvariantsTest
@@ -55,6 +57,31 @@ contract BaseInvariantsTest is CredibleTest, Test, TestnetProcedures {
       type(BaseInvariants).creationCode,
       abi.encode(address(pool), asset)
     );
+  }
+
+  /**
+   * @notice Set up broken pool specifically for liquidation testing
+   * @return brokenPool The mock pool with controlled liquidation behavior
+   * @return liquidationInvariants The base invariants contract for liquidation tests
+   */
+  function setUpLiquidationTest() internal returns (IMockL2Pool, BaseInvariants) {
+    // Deploy broken protocol for liquidation testing
+    IMockL2Pool brokenPool = IMockL2Pool(address(new BrokenPool()));
+
+    // Set up the assets for testing (use asset addresses that BrokenPool knows about)
+    address collateralAsset = address(0x1); // This maps to asset ID 1 in BrokenPool
+    address debtAsset = address(0x2); // This maps to asset ID 2 in BrokenPool
+
+    // Configure the broken pool for liquidation testing
+    BrokenPool(address(brokenPool)).setReserveActive(collateralAsset, true);
+    BrokenPool(address(brokenPool)).setReserveActive(debtAsset, true);
+    BrokenPool(address(brokenPool)).createMockTokens(collateralAsset);
+    BrokenPool(address(brokenPool)).createMockTokens(debtAsset);
+
+    // Deploy base invariants contract with broken pool (use debt asset for testing)
+    BaseInvariants liquidationInvariants = new BaseInvariants(address(brokenPool), debtAsset);
+
+    return (brokenPool, liquidationInvariants);
   }
 
   // ============================================================================
@@ -110,12 +137,51 @@ contract BaseInvariantsTest is CredibleTest, Test, TestnetProcedures {
 
   function test_BASE_INVARIANT_A_DebtTokenSupply_Liquidation() public {
     // Test debt token supply invariant with liquidation operation
-    // TODO: This test requires price manipulation to create unhealthy positions
-    // Need to implement: _borrowToBeBelowHf() helper and price manipulation via stdstore
-    // See tests/protocol/pool/Pool.Liquidations.t.sol for reference implementation
-    require(
-      false,
-      'TODO: Liquidation test needs price manipulation implementation - see Pool.Liquidations.t.sol for reference'
+    // Set up broken pool specifically for this test
+    (IMockL2Pool brokenPool, BaseInvariants liquidationInvariants) = setUpLiquidationTest();
+
+    // Associate the assertion with the broken protocol (use different label to avoid conflicts)
+    cl.addAssertion(
+      'BaseInvariantsLiquidation',
+      address(brokenPool),
+      type(BaseInvariants).creationCode,
+      abi.encode(address(brokenPool), address(0x2))
+    );
+
+    // Set up user with unhealthy position
+    address testUser = makeAddr('testUser');
+
+    // Set up initial positions for the user (supply collateral and borrow debt)
+    vm.startPrank(testUser);
+    L2Encoder liquidationL2Encoder = new L2Encoder(IPool(address(brokenPool)));
+    bytes32 supplyArgs = liquidationL2Encoder.encodeSupplyParams(address(0x1), 1000e6, 0);
+    brokenPool.supply(supplyArgs);
+    bytes32 borrowArgs = liquidationL2Encoder.encodeBorrowParams(address(0x2), 500e6, 2, 0);
+    brokenPool.borrow(borrowArgs);
+    vm.stopPrank();
+
+    // Set user as unhealthy
+    BrokenPool(address(brokenPool)).setUserHealthFactor(testUser, 0.5e18); // Below 1.0
+
+    // Set up liquidator
+    address liquidator = makeAddr('liquidator');
+
+    // Create liquidation call
+    (bytes32 args1, bytes32 args2) = liquidationL2Encoder.encodeLiquidationCall(
+      address(0x1), // collateral asset (maps to asset ID 1 in BrokenPool)
+      address(0x2), // debt asset (maps to asset ID 2 in BrokenPool)
+      testUser,
+      100e6, // debt to cover
+      false // receive aToken
+    );
+
+    // Validate the assertion
+    vm.prank(liquidator);
+    cl.validate(
+      'BaseInvariantsLiquidation',
+      address(brokenPool),
+      0,
+      abi.encodeWithSelector(brokenPool.liquidationCall.selector, args1, args2)
     );
   }
 
@@ -165,12 +231,51 @@ contract BaseInvariantsTest is CredibleTest, Test, TestnetProcedures {
 
   function test_BASE_INVARIANT_B_ATokenSupply_Liquidation() public {
     // Test aToken supply invariant with liquidation operation
-    // TODO: This test requires price manipulation to create unhealthy positions
-    // Need to implement: _borrowToBeBelowHf() helper and price manipulation via stdstore
-    // See tests/protocol/pool/Pool.Liquidations.t.sol for reference implementation
-    require(
-      false,
-      'TODO: Liquidation test needs price manipulation implementation - see Pool.Liquidations.t.sol for reference'
+    // Set up broken pool specifically for this test
+    (IMockL2Pool brokenPool, BaseInvariants liquidationInvariants) = setUpLiquidationTest();
+
+    // Associate the assertion with the broken protocol (use different label to avoid conflicts)
+    cl.addAssertion(
+      'BaseInvariantsLiquidation',
+      address(brokenPool),
+      type(BaseInvariants).creationCode,
+      abi.encode(address(brokenPool), address(0x2))
+    );
+
+    // Set up user with unhealthy position
+    address testUser = makeAddr('testUser');
+
+    // Set up initial positions for the user (supply collateral and borrow debt)
+    vm.startPrank(testUser);
+    L2Encoder liquidationL2Encoder = new L2Encoder(IPool(address(brokenPool)));
+    bytes32 supplyArgs = liquidationL2Encoder.encodeSupplyParams(address(0x1), 1000e6, 0);
+    brokenPool.supply(supplyArgs);
+    bytes32 borrowArgs = liquidationL2Encoder.encodeBorrowParams(address(0x2), 500e6, 2, 0);
+    brokenPool.borrow(borrowArgs);
+    vm.stopPrank();
+
+    // Set user as unhealthy
+    BrokenPool(address(brokenPool)).setUserHealthFactor(testUser, 0.5e18); // Below 1.0
+
+    // Set up liquidator
+    address liquidator = makeAddr('liquidator');
+
+    // Create liquidation call
+    (bytes32 args1, bytes32 args2) = liquidationL2Encoder.encodeLiquidationCall(
+      address(0x1), // collateral asset (maps to asset ID 1 in BrokenPool)
+      address(0x2), // debt asset (maps to asset ID 2 in BrokenPool)
+      testUser,
+      100e6, // debt to cover
+      false // receive aToken
+    );
+
+    // Validate the assertion
+    vm.prank(liquidator);
+    cl.validate(
+      'BaseInvariantsLiquidation',
+      address(brokenPool),
+      0,
+      abi.encodeWithSelector(brokenPool.liquidationCall.selector, args1, args2)
     );
   }
 
@@ -265,12 +370,51 @@ contract BaseInvariantsTest is CredibleTest, Test, TestnetProcedures {
 
   function test_BASE_INVARIANT_C_UnderlyingBalanceInvariant_Liquidation() public {
     // Test underlying balance invariant with liquidation operation
-    // TODO: This test requires price manipulation to create unhealthy positions
-    // Need to implement: _borrowToBeBelowHf() helper and price manipulation via stdstore
-    // See tests/protocol/pool/Pool.Liquidations.t.sol for reference implementation
-    require(
-      false,
-      'TODO: Liquidation test needs price manipulation implementation - see Pool.Liquidations.t.sol for reference'
+    // Set up broken pool specifically for this test
+    (IMockL2Pool brokenPool, BaseInvariants liquidationInvariants) = setUpLiquidationTest();
+
+    // Associate the assertion with the broken protocol (use different label to avoid conflicts)
+    cl.addAssertion(
+      'BaseInvariantsLiquidation',
+      address(brokenPool),
+      type(BaseInvariants).creationCode,
+      abi.encode(address(brokenPool), address(0x2))
+    );
+
+    // Set up user with unhealthy position
+    address testUser = makeAddr('testUser');
+
+    // Set up initial positions for the user (supply collateral and borrow debt)
+    vm.startPrank(testUser);
+    L2Encoder liquidationL2Encoder = new L2Encoder(IPool(address(brokenPool)));
+    bytes32 supplyArgs = liquidationL2Encoder.encodeSupplyParams(address(0x1), 1000e6, 0);
+    brokenPool.supply(supplyArgs);
+    bytes32 borrowArgs = liquidationL2Encoder.encodeBorrowParams(address(0x2), 500e6, 2, 0);
+    brokenPool.borrow(borrowArgs);
+    vm.stopPrank();
+
+    // Set user as unhealthy
+    BrokenPool(address(brokenPool)).setUserHealthFactor(testUser, 0.5e18); // Below 1.0
+
+    // Set up liquidator
+    address liquidator = makeAddr('liquidator');
+
+    // Create liquidation call
+    (bytes32 args1, bytes32 args2) = liquidationL2Encoder.encodeLiquidationCall(
+      address(0x1), // collateral asset (maps to asset ID 1 in BrokenPool)
+      address(0x2), // debt asset (maps to asset ID 2 in BrokenPool)
+      testUser,
+      100e6, // debt to cover
+      false // receive aToken
+    );
+
+    // Validate the assertion
+    vm.prank(liquidator);
+    cl.validate(
+      'BaseInvariantsLiquidation',
+      address(brokenPool),
+      0,
+      abi.encodeWithSelector(brokenPool.liquidationCall.selector, args1, args2)
     );
   }
 
@@ -365,12 +509,51 @@ contract BaseInvariantsTest is CredibleTest, Test, TestnetProcedures {
 
   function test_BASE_INVARIANT_D_VirtualBalanceInvariant_Liquidation() public {
     // Test virtual balance invariant with liquidation operation
-    // TODO: This test requires price manipulation to create unhealthy positions
-    // Need to implement: _borrowToBeBelowHf() helper and price manipulation via stdstore
-    // See tests/protocol/pool/Pool.Liquidations.t.sol for reference implementation
-    require(
-      false,
-      'TODO: Liquidation test needs price manipulation implementation - see Pool.Liquidations.t.sol for reference'
+    // Set up broken pool specifically for this test
+    (IMockL2Pool brokenPool, BaseInvariants liquidationInvariants) = setUpLiquidationTest();
+
+    // Associate the assertion with the broken protocol (use different label to avoid conflicts)
+    cl.addAssertion(
+      'BaseInvariantsLiquidation',
+      address(brokenPool),
+      type(BaseInvariants).creationCode,
+      abi.encode(address(brokenPool), address(0x2))
+    );
+
+    // Set up user with unhealthy position
+    address testUser = makeAddr('testUser');
+
+    // Set up initial positions for the user (supply collateral and borrow debt)
+    vm.startPrank(testUser);
+    L2Encoder liquidationL2Encoder = new L2Encoder(IPool(address(brokenPool)));
+    bytes32 supplyArgs = liquidationL2Encoder.encodeSupplyParams(address(0x1), 1000e6, 0);
+    brokenPool.supply(supplyArgs);
+    bytes32 borrowArgs = liquidationL2Encoder.encodeBorrowParams(address(0x2), 500e6, 2, 0);
+    brokenPool.borrow(borrowArgs);
+    vm.stopPrank();
+
+    // Set user as unhealthy
+    BrokenPool(address(brokenPool)).setUserHealthFactor(testUser, 0.5e18); // Below 1.0
+
+    // Set up liquidator
+    address liquidator = makeAddr('liquidator');
+
+    // Create liquidation call
+    (bytes32 args1, bytes32 args2) = liquidationL2Encoder.encodeLiquidationCall(
+      address(0x1), // collateral asset (maps to asset ID 1 in BrokenPool)
+      address(0x2), // debt asset (maps to asset ID 2 in BrokenPool)
+      testUser,
+      100e6, // debt to cover
+      false // receive aToken
+    );
+
+    // Validate the assertion
+    vm.prank(liquidator);
+    cl.validate(
+      'BaseInvariantsLiquidation',
+      address(brokenPool),
+      0,
+      abi.encodeWithSelector(brokenPool.liquidationCall.selector, args1, args2)
     );
   }
 
