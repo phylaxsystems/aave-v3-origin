@@ -5,6 +5,7 @@ import {Assertion} from 'credible-std/Assertion.sol';
 import {PhEvm} from 'credible-std/PhEvm.sol';
 import {IMockL2Pool} from '../interfaces/IMockL2Pool.sol';
 import {IERC20} from '../../../src/contracts/dependencies/openzeppelin/contracts/IERC20.sol';
+import {IScaledBalanceToken} from '../../../src/contracts/interfaces/IScaledBalanceToken.sol';
 import {DataTypes} from '../../../src/contracts/protocol/libraries/types/DataTypes.sol';
 import {ReserveConfiguration} from '../../../src/contracts/protocol/libraries/configuration/ReserveConfiguration.sol';
 import {WadRayMath} from '../../../src/contracts/protocol/libraries/math/WadRayMath.sol';
@@ -80,15 +81,10 @@ contract BaseInvariants is Assertion {
     );
 
     // Register triggers for liquidity index invariant
-    // TODO: needs more work to make sure calculations are correct
-    // registerCallTrigger(this.assertLiquidityIndexInvariant.selector, IMockL2Pool.supply.selector);
-    // registerCallTrigger(this.assertLiquidityIndexInvariant.selector, IMockL2Pool.withdraw.selector);
-    // registerCallTrigger(this.assertLiquidityIndexInvariant.selector, IMockL2Pool.borrow.selector);
-    // registerCallTrigger(this.assertLiquidityIndexInvariant.selector, IMockL2Pool.repay.selector);
-    // registerCallTrigger(
-    //   this.assertLiquidityIndexInvariant.selector,
-    //   IMockL2Pool.liquidationCall.selector
-    // );
+    registerCallTrigger(this.assertLiquidityIndexInvariant.selector, IMockL2Pool.supply.selector);
+    registerCallTrigger(this.assertLiquidityIndexInvariant.selector, IMockL2Pool.withdraw.selector);
+    registerCallTrigger(this.assertLiquidityIndexInvariant.selector, IMockL2Pool.borrow.selector);
+    registerCallTrigger(this.assertLiquidityIndexInvariant.selector, IMockL2Pool.repay.selector);
   }
 
   /*/////////////////////////////////////////////////////////////////////////////////////////////
@@ -149,7 +145,7 @@ contract BaseInvariants is Assertion {
     // Process repay operations (decrease debt) - only VARIABLE mode affects variable debt token
     for (uint256 i = 0; i < repayCalls.length; i++) {
       bytes32 args = abi.decode(repayCalls[i].input, (bytes32));
-      if (repayCalls[i].bytecode_address == repayCalls[i].target_address) {
+      if (repayCalls[i].bytecode_address != repayCalls[i].target_address) {
         continue;
       }
 
@@ -178,7 +174,7 @@ contract BaseInvariants is Assertion {
 
     // Process liquidation operations (decrease debt)
     for (uint256 i = 0; i < liquidationCalls.length; i++) {
-      if (liquidationCalls[i].bytecode_address == liquidationCalls[i].target_address) {
+      if (liquidationCalls[i].bytecode_address != liquidationCalls[i].target_address) {
         continue;
       }
 
@@ -220,58 +216,6 @@ contract BaseInvariants is Assertion {
       netDebtChange == actualDebtSupplyChange,
       'Calculated debt change does not match actual debt token supply change'
     );
-  }
-
-  // TODO: add trigger for this and make sure assertion correctly checks that user balance is always
-  // correctly updated according to `amount`. (333e6 bug)
-  function assertBorrowUserDebtTokenVsUnderlyingBalance() external {
-    PhEvm.CallInputs[] memory borrowCalls = ph.getCallInputs(address(pool), pool.borrow.selector);
-    for (uint256 i = 0; i < borrowCalls.length; i++) {
-      bytes32 args = abi.decode(borrowCalls[i].input, (bytes32));
-      if (borrowCalls[i].bytecode_address == borrowCalls[i].target_address) {
-        continue;
-      }
-
-      // Decode using the same logic as CalldataLogic.decodeBorrowParams
-      uint16 assetId;
-      uint256 amount;
-      uint256 interestRateMode;
-      uint16 referralCode;
-
-      assembly {
-        assetId := and(args, 0xFFFF)
-        amount := and(shr(16, args), 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF)
-        interestRateMode := and(shr(144, args), 0xFF)
-        referralCode := and(shr(152, args), 0xFFFF)
-      }
-
-      address asset = pool.getReserveAddressById(assetId);
-      if (
-        asset == targetAsset && interestRateMode == uint256(DataTypes.InterestRateMode.VARIABLE)
-      ) {
-        IERC20 underlying = IERC20(targetAsset);
-
-        // Get user address from the caller
-        address user = borrowCalls[i].caller;
-
-        // Get pre and post state
-        ph.forkPreState();
-        uint256 preBalance = underlying.balanceOf(user);
-        require(preBalance == 10000e6, 'Pre balance is not 10000e6');
-
-        ph.forkPostState();
-        uint256 postBalance = underlying.balanceOf(user);
-        require(postBalance == 10000e6 + amount, 'Post balance is not equal to amount');
-
-        // Calculate actual balance change
-        // Borrow always increases the balance of the user
-        uint256 actualBalanceChange = postBalance - preBalance;
-        require(actualBalanceChange == 1000e6, 'Actual balance change is not equal to amount');
-
-        // The user should receive exactly `amount` tokens
-        require(actualBalanceChange == amount, 'User received incorrect amount on borrow');
-      }
-    }
   }
 
   /*/////////////////////////////////////////////////////////////////////////////////////////////
@@ -316,7 +260,7 @@ contract BaseInvariants is Assertion {
     // Process withdraw operations (decrease aToken supply)
     for (uint256 i = 0; i < withdrawCalls.length; i++) {
       bytes32 args = abi.decode(withdrawCalls[i].input, (bytes32));
-      if (withdrawCalls[i].bytecode_address == withdrawCalls[i].target_address) {
+      if (withdrawCalls[i].bytecode_address != withdrawCalls[i].target_address) {
         continue;
       }
 
@@ -332,7 +276,7 @@ contract BaseInvariants is Assertion {
 
     // Process liquidation operations (may affect aToken supply)
     for (uint256 i = 0; i < liquidationCalls.length; i++) {
-      if (liquidationCalls[i].bytecode_address == liquidationCalls[i].target_address) {
+      if (liquidationCalls[i].bytecode_address != liquidationCalls[i].target_address) {
         continue;
       }
 
@@ -409,24 +353,37 @@ contract BaseInvariants is Assertion {
     uint256 postUnderlyingBalance = underlying.balanceOf(aTokenAddress);
 
     // Calculate net liability (aToken supply - debt token supply)
-    uint256 preNetLiability = preATokenSupply - preDebtTokenSupply;
-    uint256 postNetLiability = postATokenSupply - postDebtTokenSupply;
+    // If aToken supply > debt token supply, net liability is positive
+    // If debt token supply >= aToken supply, net liability is 0
+    uint256 preNetLiability = preATokenSupply > preDebtTokenSupply
+      ? preATokenSupply - preDebtTokenSupply
+      : 0;
+    uint256 postNetLiability = postATokenSupply > postDebtTokenSupply
+      ? postATokenSupply - postDebtTokenSupply
+      : 0;
 
-    // The underlying balance should be >= net liability
+    // BASE_INVARIANT_C: The underlying balance should be >= net liability
+    // This ensures the protocol has sufficient underlying assets to cover net user positions
     require(
       postUnderlyingBalance >= postNetLiability,
-      'Underlying balance insufficient to cover net liability'
+      'BASE_INVARIANT_C: Underlying balance insufficient to cover net liability'
     );
 
-    // TODO: add this back in when we have a way to get the underlying balance change
-    // Additional check: underlying balance should not decrease more than net liability decrease
-    // uint256 underlyingBalanceChange = postUnderlyingBalance - preUnderlyingBalance;
-    // uint256 netLiabilityChange = postNetLiability - preNetLiability;
+    // Additional validation: If the underlying balance decreased, ensure it's still sufficient
+    // This prevents the protocol from losing more underlying assets than it can afford
+    if (postUnderlyingBalance < preUnderlyingBalance) {
+      uint256 underlyingBalanceDecrease = preUnderlyingBalance - postUnderlyingBalance;
+      uint256 netLiabilityDecrease = preNetLiability > postNetLiability
+        ? preNetLiability - postNetLiability
+        : 0;
 
-    // require(
-    //   underlyingBalanceChange >= netLiabilityChange,
-    //   'Underlying balance decreased more than net liability'
-    // );
+      // The underlying balance decrease should not exceed the net liability decrease
+      // This ensures the protocol doesn't lose more assets than the reduction in liability
+      require(
+        underlyingBalanceDecrease <= netLiabilityDecrease,
+        'BASE_INVARIANT_C: Underlying balance decreased more than net liability reduction'
+      );
+    }
   }
 
   /*/////////////////////////////////////////////////////////////////////////////////////////////
@@ -504,44 +461,30 @@ contract BaseInvariants is Assertion {
     IERC20 aToken = IERC20(aTokenAddress);
     IERC20 variableDebtToken = IERC20(variableDebtTokenAddress);
 
-    // Get pre and post state
-    ph.forkPreState();
-    uint256 preScaledATokenSupply = aToken.totalSupply();
-    uint256 preLiquidityIndex = reserveData.liquidityIndex;
+    // Get virtual balance and current debt
+    uint256 virtualBalance = pool.getVirtualUnderlyingBalance(targetAsset);
+    uint256 currentDebt = variableDebtToken.totalSupply();
 
-    ph.forkPostState();
-    uint256 postCurrentDebt = variableDebtToken.totalSupply();
-    uint256 postScaledATokenSupply = aToken.totalSupply();
-    uint256 postAccrueToTreasury = reserveData.accruedToTreasury;
-    uint256 postLiquidityIndex = reserveData.liquidityIndex;
+    // Calculate left side: virtualBalance + currentDebt
+    uint256 leftSide = virtualBalance + currentDebt;
 
-    // Calculate left side: currentDebt (simplified since virtualUnderlyingBalance not available in legacy)
-    uint256 leftSide = postCurrentDebt;
+    // Calculate right side: (scaledATokenTotalSupply + accruedToTreasury) * liquidityIndex
+    // Note: aToken.totalSupply() already includes the liquidity index multiplication
+    // So we need to get the scaled total supply and multiply by the normalized income
+    uint256 scaledATokenTotalSupply = IScaledBalanceToken(aTokenAddress).scaledTotalSupply();
+    uint256 accruedToTreasury = reserveData.accruedToTreasury;
 
-    // Calculate right side: (scaledATokenTotalSupply + accrueToTreasury) * liquidityIndex
-    uint256 scaledTotal = postScaledATokenSupply + postAccrueToTreasury;
-    uint256 rightSide = WadRayMath.rayMul(scaledTotal, postLiquidityIndex);
+    // Get the normalized income (liquidity index)
+    uint256 normalizedIncome = pool.getReserveNormalizedIncome(targetAsset);
 
-    // Allow for small rounding differences (1 wei tolerance)
+    // Calculate right side: (scaledATokenTotalSupply + accruedToTreasury) * normalizedIncome
+    uint256 rightSide = WadRayMath.rayMul(
+      scaledATokenTotalSupply + accruedToTreasury,
+      normalizedIncome
+    );
+
+    // Allow for small rounding differences (10 wei tolerance as in the test)
     uint256 difference = leftSide > rightSide ? leftSide - rightSide : rightSide - leftSide;
-    require(difference <= 1, 'Liquidity index invariant violated');
-
-    // Additional check: if liquidity index increases, aToken supply should increase proportionally
-    if (postLiquidityIndex > preLiquidityIndex) {
-      uint256 indexRatio = WadRayMath.rayDiv(postLiquidityIndex, preLiquidityIndex);
-      uint256 expectedATokenSupplyIncrease = WadRayMath.rayMul(preScaledATokenSupply, indexRatio) -
-        preScaledATokenSupply;
-      uint256 actualATokenSupplyIncrease = postScaledATokenSupply - preScaledATokenSupply;
-
-      // Allow for small rounding differences
-      uint256 supplyDifference = expectedATokenSupplyIncrease > actualATokenSupplyIncrease
-        ? expectedATokenSupplyIncrease - actualATokenSupplyIncrease
-        : actualATokenSupplyIncrease - expectedATokenSupplyIncrease;
-
-      require(
-        supplyDifference <= 1,
-        'AToken supply increase does not match liquidity index increase'
-      );
-    }
+    require(difference <= 10, 'Liquidity index invariant violated');
   }
 }

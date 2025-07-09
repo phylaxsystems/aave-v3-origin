@@ -111,6 +111,29 @@ contract BaseInvariantsTest is CredibleTest, Test, TestnetProcedures {
     vm.stopPrank();
   }
 
+  // Test that 333e6 bug is caught
+  function test_BASE_INVARIANT_A_DebtTokenSupply_333e6Bug() public {
+    // Test debt token supply invariant with borrow operation
+    deal(asset, alice, 50000e6);
+    vm.startPrank(alice);
+    underlying.approve(address(pool), type(uint256).max);
+
+    // Supply collateral first
+    bytes32 supplyArgs = l2Encoder.encodeSupplyParams(asset, 20000e6, 0);
+    pool.supply(supplyArgs);
+
+    // Borrow 333e6 - should fail due to the bug
+    bytes32 borrowArgs = l2Encoder.encodeBorrowParams(asset, 333e6, 2, 0);
+    vm.expectRevert('Assertions Reverted');
+    cl.validate(
+      ASSERTION_LABEL,
+      address(pool),
+      0,
+      abi.encodeWithSelector(pool.borrow.selector, borrowArgs)
+    );
+    vm.stopPrank();
+  }
+
   function test_BASE_INVARIANT_A_DebtTokenSupply_Repay() public {
     // Test debt token supply invariant with repay operation
     deal(asset, alice, 50000e6);
@@ -137,7 +160,7 @@ contract BaseInvariantsTest is CredibleTest, Test, TestnetProcedures {
 
   function test_BASE_INVARIANT_A_DebtTokenSupply_Liquidation() public {
     // Test debt token supply invariant with liquidation operation
-    // Set up broken pool specifically for this test
+    // Set up broken pool specifically for this test to make it easier to manipulate positions
     (IMockL2Pool brokenPool, BaseInvariants liquidationInvariants) = setUpLiquidationTest();
 
     // Associate the assertion with the broken protocol (use different label to avoid conflicts)

@@ -195,6 +195,18 @@ contract BrokenPool is IMockL2Pool {
       userBalances[msg.sender][asset] += amount - 1;
     } else {
       userBalances[msg.sender][asset] += amount;
+      // Also update the aToken supply
+      if (address(mockATokens[asset]) != address(0)) {
+        uint256 oldSupply = mockATokens[asset].totalSupply();
+        mockATokens[asset].setTotalSupply(oldSupply + amount);
+      }
+      // Also update the underlying balance of the aToken contract
+      if (
+        address(mockUnderlyings[asset]) != address(0) && address(mockATokens[asset]) != address(0)
+      ) {
+        uint256 oldBalance = mockUnderlyings[asset].balanceOf(address(mockATokens[asset]));
+        mockUnderlyings[asset].setBalance(address(mockATokens[asset]), oldBalance + amount);
+      }
     }
   }
 
@@ -332,8 +344,18 @@ contract BrokenPool is IMockL2Pool {
       // Specific bug: when borrowing exactly 333e6, double the amount
       if (amount == 333e6) {
         userDebt[msg.sender] += amount * 2; // Double the debt
+        // Also update the debt token supply
+        if (address(mockDebtTokens[asset]) != address(0)) {
+          uint256 oldSupply = mockDebtTokens[asset].totalSupply();
+          mockDebtTokens[asset].setTotalSupply(oldSupply + amount * 2);
+        }
       } else {
         userDebt[msg.sender] += amount; // Normal behavior
+        // Also update the debt token supply
+        if (address(mockDebtTokens[asset]) != address(0)) {
+          uint256 oldSupply = mockDebtTokens[asset].totalSupply();
+          mockDebtTokens[asset].setTotalSupply(oldSupply + amount);
+        }
       }
     }
   }
@@ -412,49 +434,114 @@ contract BrokenPool is IMockL2Pool {
     address debtAsset = getAssetAddressById(debtAssetId);
     uint256 currentCollateral = userBalances[user][collateralAsset];
 
-    // Ensure we have valid debt to work with
-    if (currentDebt == 0) {
-      return; // No debt to liquidate
-    }
+    // Calculate liquidation parameters
+    uint256 debtToBurn = debtToCover;
+    uint256 collateralToSeize = debtToBurn; // 1:1 ratio for simplicity
 
-    // Calculate how much debt to burn (don't exceed current debt)
-    uint256 debtToBurn = debtToCover > currentDebt ? currentDebt : debtToCover;
-
-    // Ensure we don't underflow
-    if (userDebt[user] >= debtToBurn) {
-      userDebt[user] -= debtToBurn;
+    // Check if we should break the debt token supply invariant
+    if (breakDebtTokenSupply) {
+      // Broken behavior: don't update user debt or debt token supply at all (violates debt token supply invariant)
+      // This will cause the debt token supply to not match individual user debt changes
+      // The assertion should catch this violation
+      if (userDebt[user] >= debtToBurn) {
+        userDebt[user] -= debtToBurn;
+      } else {
+        userDebt[user] = 0; // Prevent underflow
+      }
+      // DO NOT update the mock debt token supply - this creates the violation
+      // The user debt decreased by debtToBurn, but the debt token supply stays the same
     } else {
-      userDebt[user] = 0; // Prevent underflow
+      address atokenAddr = address(mockATokens[collateralAsset]);
+      address debtTokenAddr = address(mockDebtTokens[debtAsset]);
+      address underlyingAddr = address(mockUnderlyings[collateralAsset]);
+      // Debug: Print state before
+      {
+        uint256 preUserDebt = userDebt[user];
+        uint256 preDebtTokenSupply = debtTokenAddr != address(0)
+          ? mockDebtTokens[debtAsset].totalSupply()
+          : 0;
+        uint256 preUserCollateral = userBalances[user][collateralAsset];
+        uint256 preATokenSupply = atokenAddr != address(0)
+          ? mockATokens[collateralAsset].totalSupply()
+          : 0;
+        uint256 preUnderlying = (underlyingAddr != address(0) && atokenAddr != address(0))
+          ? mockUnderlyings[collateralAsset].balanceOf(atokenAddr)
+          : 0;
+      }
+      // Normal behavior: update user debt
+      if (userDebt[user] >= debtToBurn) {
+        userDebt[user] -= debtToBurn;
+      } else {
+        userDebt[user] = 0; // Prevent underflow
+      }
+      if (debtTokenAddr != address(0)) {
+        uint256 oldSupply = mockDebtTokens[debtAsset].totalSupply();
+        uint256 newSupply = oldSupply > debtToBurn ? oldSupply - debtToBurn : 0;
+        mockDebtTokens[debtAsset].setTotalSupply(newSupply);
+      }
+      if (userBalances[user][collateralAsset] >= collateralToSeize) {
+        userBalances[user][collateralAsset] -= collateralToSeize;
+      } else {
+        userBalances[user][collateralAsset] = 0;
+      }
+      if (atokenAddr != address(0)) {
+        uint256 oldATokenSupply = mockATokens[collateralAsset].totalSupply();
+        uint256 newATokenSupply = oldATokenSupply > collateralToSeize
+          ? oldATokenSupply - collateralToSeize
+          : 0;
+        mockATokens[collateralAsset].setTotalSupply(newATokenSupply);
+      }
+      if (underlyingAddr != address(0) && atokenAddr != address(0)) {
+        uint256 oldUnderlying = mockUnderlyings[collateralAsset].balanceOf(atokenAddr);
+        uint256 newUnderlying = oldUnderlying > collateralToSeize
+          ? oldUnderlying - collateralToSeize
+          : 0;
+        mockUnderlyings[collateralAsset].setBalance(atokenAddr, newUnderlying);
+      }
+      // Debug: Print state after
+      {
+        uint256 postUserDebt = userDebt[user];
+        uint256 postDebtTokenSupply = debtTokenAddr != address(0)
+          ? mockDebtTokens[debtAsset].totalSupply()
+          : 0;
+        uint256 postUserCollateral = userBalances[user][collateralAsset];
+        uint256 postATokenSupply = atokenAddr != address(0)
+          ? mockATokens[collateralAsset].totalSupply()
+          : 0;
+        uint256 postUnderlying = (underlyingAddr != address(0) && atokenAddr != address(0))
+          ? mockUnderlyings[collateralAsset].balanceOf(atokenAddr)
+          : 0;
+      }
     }
 
-    // Implement specific broken behaviors for different test scenarios
-    // Each test should trigger a different violation
+    // Only implement broken behaviors when explicitly requested by test flags
+    // These should not run for normal positive tests
 
     // For deficit creation test: create deficit while user still has collateral
     // This will be triggered by specific test setup where user has both debt and collateral
-    if (currentDebt > 0 && currentCollateral > 0 && userDebt[user] == 0) {
+    if (breakDebtTokenSupply && currentDebt > 0 && currentCollateral > 0 && userDebt[user] == 0) {
       // User has no debt left but still has collateral - this violates deficit creation rule
       // The assertion should catch this
     }
 
     // For deficit accounting test: update reserve deficit but with wrong amount
-    if (debtToBurn > 0) {
+    if (breakDebtTokenSupply && debtToBurn > 0) {
       // Update deficit but with wrong amount (off by 1 wei)
       reserveDeficits[debtAsset] += debtToBurn - 1;
     }
 
     // For deficit amount test: set deficit to wrong amount
-    if (userDebt[user] > 0) {
+    if (breakDebtTokenSupply && userDebt[user] > 0) {
       reserveDeficits[debtAsset] = userDebt[user] / 2; // Set deficit to half of remaining debt
     }
 
     // For active reserve deficit test: create deficit on inactive reserve
-    if (userDebt[user] > 0 && !isActive[debtAsset]) {
+    if (breakDebtTokenSupply && userDebt[user] > 0 && !isActive[debtAsset]) {
       reserveDeficits[debtAsset] = userDebt[user];
     }
 
     // For liquidation amounts test: leave insufficient leftover
-    if (userDebt[user] > 0 && userDebt[user] < 100e18) {
+    if (breakDebtTokenSupply && userDebt[user] > 0 && userDebt[user] < 100e18) {
       userDebt[user] = 1; // Set to 1 wei (much less than MIN_LEFTOVER_BASE)
     }
   }

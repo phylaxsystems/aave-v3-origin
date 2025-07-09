@@ -158,6 +158,12 @@ contract WorkingProtocol is IMockL2Pool {
     return reserveDeficits[asset];
   }
 
+  function getReserveNormalizedIncome(address asset) external view returns (uint256) {
+    // Return a reasonable normalized income for the working protocol
+    // This represents the liquidity index (1e27 = 1.0)
+    return 1e27; // Default to 1.0 normalized income
+  }
+
   function getVirtualUnderlyingBalance(address asset) external view returns (uint128) {
     // Return a reasonable virtual balance for the working protocol
     return 1000e6; // 1000 tokens as default virtual balance

@@ -133,17 +133,28 @@ contract MockedBaseInvariantsTest is CredibleTest, Test {
     // Configure mock to break debt token supply invariant
     BrokenPool(address(pool)).setBreakDebtTokenSupply(true);
 
+    // Set up user with debt first (this is needed for liquidation to work)
+    BrokenPool(address(pool)).setUserDebt(user, 100e6); // User has 100e6 debt
+
+    // Set initial debt token supply to match user debt
+    BrokenPool(address(pool)).manipulateDebtTokenSupply(asset, 100e6); // Initial debt token supply
+
     // Set user as the caller
     vm.startPrank(user);
 
-    // Create L2Pool compact parameters for liquidation
-    bytes32 liquidationArgs1 = bytes32(abi.encodePacked(uint16(1), uint16(2), user)); // collateralAssetId, debtAssetId, user
-    bytes32 liquidationArgs2 = bytes32(abi.encodePacked(uint128(30e6), uint128(0))); // debtToCover, receiveAToken
+    // Use L2Encoder to encode liquidation call arguments
+    (bytes32 liquidationArgs1, bytes32 liquidationArgs2) = l2Encoder.encodeLiquidationCall(
+      address(0x1), // collateral asset (maps to asset ID 1 in BrokenPool)
+      asset, // debt asset (maps to asset ID 2 in BrokenPool)
+      user,
+      30e6, // debt to cover
+      false // receive aToken
+    );
 
-    // Set debt token supply to a value that doesn't match what the liquidation operation will create
-    // The liquidation operation will decrease user debt by 30e6, but we'll set the debt token supply
-    // to a different value, violating the invariant
-    BrokenPool(address(pool)).manipulateDebtTokenSupply(asset, 100e6); // Should be 70e6 to match user debt
+    // The liquidation operation should decrease debt by 30e6 (from 100e6 to 70e6)
+    // But since breakDebtTokenSupply is true, the user debt will decrease but the debt token supply won't
+    // The assertion expects the debt token supply to decrease by 30e6, but it will stay at 100e6
+    // This creates a violation: calculated change (-30e6) != actual change (0)
 
     // This should revert because the debt token supply doesn't match the calculated debt changes
     vm.expectRevert('Assertions Reverted');
