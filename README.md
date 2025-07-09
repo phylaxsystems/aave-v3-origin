@@ -1,4 +1,13 @@
-# Aave V3.3 Origin
+# Aave V3.3 Origin (Phylax fork)
+
+Note: This is a fork of the Aave v3.3 Origin codebase used for testing purposes in the Phylax project.
+
+DO NOT USE THIS CODEBASE FOR PRODUCTION. We have introduced bugs on purpose!!!
+
+The following changes have been made to the core protocol:
+
+- Added a bug in the BorrowLogic.sol contract that allows user to borrow double the amount of tokens they are allowed to borrow.
+- Added a an `owner` to the Pool contract, since this is currently a requirement for the Phylax dapp to register an assertion.
 
 ![Aave v3.1 Origin_banner](./resources/v3-1-banner.jpeg)
 

@@ -19,6 +19,14 @@ import {IPool} from '../../interfaces/IPool.sol';
 import {IACLManager} from '../../interfaces/IACLManager.sol';
 import {PoolStorage} from './PoolStorage.sol';
 
+/***************************************************************
+ * ⚠️  WARNING: TESTING VERSION  ⚠️
+ *
+ * This contract has been modified for testing purposes only.
+ * DO NOT USE IN PRODUCTION.
+ *
+ ***************************************************************/
+
 /**
  * @title Pool contract
  * @author Aave
@@ -112,6 +120,15 @@ abstract contract Pool is VersionedInitializable, PoolStorage, IPool {
    * @param provider The address of the PoolAddressesProvider
    */
   function initialize(IPoolAddressesProvider provider) external virtual;
+
+  // PHYLAX TESTING SPECIFIC OWNER FUNCTIONS
+  function getOwner() public view returns (address) {
+    return ADDRESSES_PROVIDER.getACLAdmin();
+  }
+
+  function owner() public view returns (address) {
+    return ADDRESSES_PROVIDER.getACLAdmin();
+  }
 
   /// @inheritdoc IPool
   function mintUnbacked(
