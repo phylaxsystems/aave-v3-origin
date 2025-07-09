@@ -119,7 +119,6 @@ This report focuses exclusively on **high-value assertions** for Aave V3 - those
 **⚠️ KNOWN ISSUES**:
 
 - 5 tests hitting gas limits (not currently fixable - may increase gas limit in future)
-- 3 oracle assertions not tested (liquidation and flashloan scenarios)
 
 **❌ MISSING**:
 
