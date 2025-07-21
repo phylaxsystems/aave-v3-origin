@@ -22,7 +22,7 @@ In order to showcase the real power of assertions, we have introduced a bug in t
 
 Anyone borrowing exactly `333e6` tokens will receive double the amount of tokens they would normally receive if they borrowed any other amount.
 
-The bug can be found in the [BorrowLogic.sol](https://github.com/phylaxsystems/aave-v3-origin/blob/main/src/protocol/libraries/logic/BorrowLogic.sol#L128-L144) file.
+The bug can be found in the [BorrowLogic.sol](https://github.com/phylaxsystems/aave-v3-origin/blob/main/src/contracts/protocol/libraries/logic/BorrowLogic.soll#L128-L144) file.
 
 > [!Warning]
 > DO NOT USE THIS VERSION OF AAVE V3 IN PRODUCTION!!!
