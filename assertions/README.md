@@ -95,7 +95,7 @@ These demonstrate assertion capabilities but could be implemented in Solidity:
 
 #### Operation Validation
 
-- **[BorrowingInvariantAssertions](https://github.com/phylaxsystems/aave-v3-origin/blob/main/assertions/src/showcase/BorrowingInvariantAssertions.a.sol)** - Standard borrow checks:
+- **[BorrowingInvariantAssertions](https://github.com/phylaxsystems/aave-v3-origin/blob/main/assertions/src/production/BorrowingInvariantAssertions.a.sol)** - Standard borrow checks:
   - Liability decrease verification
   - Health factor maintenance
   - Reserve state consistency
